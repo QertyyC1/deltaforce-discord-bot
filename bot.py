@@ -25,9 +25,9 @@ async def on_ready():
 
 @bot.command()
 async def sprawdz(ctx):
-    await ctx.send("🔄 Pobieram Daily Codes...")
+    await ctx.send("🔄 Pobieram Daily Codes z DeltaForceTools...")
 
-    url = "https://api.sfogamingnetwork.com/v1/codes"
+    url = "https://deltaforcetools.gg/api/codes.json"
 
     try:
         response = requests.get(url, timeout=10)
@@ -40,10 +40,10 @@ async def sprawdz(ctx):
         return
 
     data = response.json()
-    codes = data.get("lightcodes", [])
+    codes = data.get("dailyCodes", [])
 
     if len(codes) < 5:
-        await ctx.send("⚠️ API nie zwróciło wszystkich kodów!")
+        await ctx.send("⚠️ Brak pełnej listy kodów!")
         return
 
     message = "**✅ Dzisiejsze Daily Codes:**\n\n"
@@ -51,6 +51,7 @@ async def sprawdz(ctx):
         message += f"🔹 Kod {i}: `{code}`\n"
 
     await ctx.send(message)
+
 
 
 @tasks.loop(minutes=5)
@@ -65,6 +66,7 @@ async def check_codes():
         await channel.send(f"⏰ Autosprawdzenie kodów ({now} UTC) — użyj !sprawdz")
 
 bot.run(TOKEN)
+
 
 
 
