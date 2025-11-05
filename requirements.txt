@@ -1,6 +1,8 @@
 discord.py
-aiohttp
+requests
 beautifulsoup4
 
-# force redeploy2
+
+
+
 
