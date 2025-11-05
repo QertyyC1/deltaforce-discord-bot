@@ -1,9 +1,5 @@
 requests
 discord.py
-lxml
-lxml_html_clean
+beautifulsoup4
 html5lib
-
-
-
 
