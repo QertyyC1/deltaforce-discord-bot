@@ -28,16 +28,33 @@ async def sprawdz(ctx):
 
     if not API_KEY:
         await ctx.send("❌ Brak API_KEY w zmiennych środowiskowych!")
+        print("❌ DEBUG: API_KEY is None")
         return
 
     url = "https://fortniteapi.io/v1/codes/list"
     headers = {"Authorization": API_KEY}
 
+    print("🔍 DEBUG: Wysyłam zapytanie do API...")
+    print(f"🔍 DEBUG: URL = {url}")
+    print(f"🔍 DEBUG: API_KEY preview = {API_KEY[:4]}...{API_KEY[-4:]}")
+
     try:
         response = requests.get(url, headers=headers)
+        print(f"🔍 DEBUG: Status = {response.status_code}")
+        print(f"🔍 DEBUG: Response = {response.text}")
+    except Exception as e:
+        await ctx.send("❌ Wyjątek podczas połączenia z API")
+        print(f"❌ DEBUG ERROR: {e}")
+        return
+
+    if response.status_code != 200:
+        await ctx.send(f"❌ API zwróciło błąd: {response.status_code}")
+        return
+
+    try:
         data = response.json()
     except:
-        await ctx.send("❌ Błąd połączenia z API")
+        await ctx.send("⚠️ API nie zwróciło JSON!")
         return
 
     codes = data.get("codes", [])
@@ -49,6 +66,7 @@ async def sprawdz(ctx):
         for c in codes:
             msg += f"> 🎯 `{c['code']}` — {c.get('title','Brak opisu')}\n"
         await ctx.send(msg)
+
 
 @tasks.loop(minutes=5)
 async def check_codes():
@@ -62,6 +80,7 @@ async def check_codes():
         await channel.send(f"⏰ Autosprawdzenie kodów ({now} UTC) — użyj !sprawdz")
 
 bot.run(TOKEN)
+
 
 
 
