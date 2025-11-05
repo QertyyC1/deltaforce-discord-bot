@@ -23,8 +23,41 @@ def fetch_daily_codes():
     try:
         r = requests.get(url, timeout=10)
         if r.status_code != 200:
-            print(f"❌ Błąd HTTP podczas pobierania strony: {r.status_code}")
+            print(f"❌ Błąd HTTP: {r.status_code}")
             return None
+
+        soup = BeautifulSoup(r.text, "html5lib")
+
+        # Zbieramy wszystkie kafelki Daily Codes
+        cards = soup.select("div.col-lg-3.col-sm-6.mb-4")
+        if not cards:
+            print("⚠️ Nie znaleziono kafelków z kodami")
+            return None
+
+        codes = []
+
+        for card in cards:
+            # Każdy kod jest wewnątrz <p>
+            paragraphs = card.find_all("p")
+            for p in paragraphs:
+                txt = p.get_text(strip=True)
+                if txt.isdigit():  # kod to same cyfry
+                    codes.append(txt)
+                    break
+
+            if len(codes) >= 5:
+                break
+
+        if not codes:
+            print("⚠️ Nie udało się odczytać żadnych kodów")
+            return None
+
+        print("✅ Pobranie udane:", codes)
+        return codes
+
+    except Exception as e:
+        print("❌ Błąd podczas scrapowania:", e)
+        return None
 
         soup = BeautifulSoup(r.text, "html5lib")
 
@@ -107,6 +140,7 @@ async def check_codes():
         await channel.send(f"⚠️ Autosprawdzenie ({now}) — nie udało się pobrać kodów!")
 
 bot.run(TOKEN)
+
 
 
 
