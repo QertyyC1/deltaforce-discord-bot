@@ -18,12 +18,7 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-
 def fetch_daily_codes():
-    """
-    Pobiera 5 kodów spod nagłówka "Daily Codes" na stronie https://deltaforcetools.gg
-    Zwraca listę stringów (kodów) lub None przy błędzie.
-    """
     url = "https://deltaforcetools.gg"
     try:
         r = requests.get(url, timeout=10)
@@ -33,52 +28,38 @@ def fetch_daily_codes():
 
         soup = BeautifulSoup(r.text, "html5lib")
 
-        # Znajdź nagłówek "Daily Codes"
-        header = soup.find(lambda tag: tag.name in ["h1", "h2", "h3"] and "Daily Codes" in tag.get_text())
+        # Znajdź nagłówek „Daily Codes”
+        header = soup.find("h2", string=lambda s: s and "Daily Codes" in s)
         if not header:
-            print("⚠️ Nie znaleziono nagłówka 'Daily Codes' na stronie.")
+            print("⚠️ Nie znaleziono nagłówka 'Daily Codes'")
             return None
 
-        # Zbierz teksty kolejnych siblings aż do następnego nagłówka (h1/h2/h3) lub limitu
+        # Następne elementy — zazwyczaj <div> lub sekcja z listą
+        container = header.find_next_sibling()
+        if not container:
+            print("⚠️ Nie znaleziono kontenera po nagłówku")
+            return None
+
+        # Zbierz wszystkie bloki tekstu w tym kontenerze
         texts = []
-        for sib in header.find_next_siblings():
-            if sib.name and sib.name.lower() in ["h1", "h2", "h3"]:
-                break
-            txt = sib.get_text(separator="\n", strip=True)
+        for el in container.find_all(recursive=False):
+            txt = el.get_text(strip=True)
             if txt:
-                # rozbijamy po nowych liniach, bo elementy mogą zawierać kilka wierszy
-                for line in txt.splitlines():
-                    line = line.strip()
-                    if line:
-                        texts.append(line)
+                texts.append(txt)
 
-            # klauzula bezpieczeństwa: nie zbieraj zbyt dużo
-            if len(texts) > 100:
-                break
-
-        # Na stronie każdy rekord to: nazwa_mapy, kod, data, godzina (4 linie)
+        # texts zawiera naprzemienne: mapa, kod, data, godzina
         codes = []
-        i = 0
-        while i + 1 < len(texts):
-            # zabezpieczenie: jeśli nie pasuje idealnie w grupy po 4, spróbujemy wyłuskać liczbowy kod
-            map_name = texts[i]
-            code_candidate = texts[i + 1]
-            # kod powinien być krótkim ciągiem cyfr (np. '5364' lub z zerami)
-            # jeżeli code_candidate zawiera cyfry, weźmy pierwsze słowo zawierające cyfry
-            import re
-            m = re.search(r"\d{2,}", code_candidate)
+        import re
+        for txt in texts:
+            # szukamy ciągu cyfr minimum 2 cyfry
+            m = re.search(r"\b\d{2,}\b", txt)
             if m:
                 codes.append(m.group(0))
-                i += 4  # przejdź do następnej grupy (mapa, kod, data, godzina)
-            else:
-                # jeśli nie pasuje, przesuwamy o 1 i próbujemy dalej (tolerancyjnie)
-                i += 1
-
             if len(codes) >= 5:
                 break
 
         if not codes:
-            print("⚠️ Nie udało się wyciągnąć żadnego kodu z tekstów:", texts[:20])
+            print("⚠️ Nie udało się wyciągnąć żadnych kodów z tekstów:", texts[:10])
             return None
 
         return codes[:5]
@@ -87,17 +68,13 @@ def fetch_daily_codes():
         print("❌ Błąd podczas scrapowania:", e)
         return None
 
-
 @bot.event
 async def on_ready():
     print(f"✅ Bot zalogowany jako: {bot.user}")
-    # startujemy automatyczne sprawdzanie (jeśli chcesz, możesz zmienić interwał)
     check_codes.start()
-
 
 @bot.command()
 async def sprawdz(ctx):
-    """Ręczne pobranie i wysłanie Daily Codes"""
     await ctx.send("🔄 Pobieram Daily Codes...")
 
     codes = fetch_daily_codes()
@@ -105,15 +82,13 @@ async def sprawdz(ctx):
         await ctx.send("❌ Nie udało się pobrać kodów! 😕")
         return
 
-    msg = "**✅ Dzisiejsze kody DeltaForceTools:**\n"
+    msg = "**✅ Dzisiejsze Daily Codes:**\n"
     for idx, code in enumerate(codes, start=1):
         msg += f"• Kod {idx}: `{code}`\n"
     await ctx.send(msg)
 
-
-@tasks.loop(minutes=20)
+@tasks.loop(hours=24)
 async def check_codes():
-    """Automatyczne przypomnienie co 20 minut (zmień jeśli chcesz)."""
     if not CHANNEL_ID:
         print("❌ Brak CHANNEL_ID w zmiennych środowiskowych.")
         return
@@ -123,13 +98,15 @@ async def check_codes():
         print("❌ Nie mogę znaleźć kanału o ID:", CHANNEL_ID)
         return
 
-    # tylko informacyjne autosprawdzenie, możesz zastąpić wysyłką kodów bezpośrednio
-    now = datetime.utcnow().strftime("%H:%M")
-    await channel.send(f"⏰ Auto-check ({now} UTC) — użyj `!sprawdz`")
-
+    now = datetime.utcnow().strftime("%H:%M UTC")
+    codes = fetch_daily_codes()
+    if codes:
+        msg = "**🕒 Auto-Daily Codes:**\n" + "\n".join([f"• `{code}`" for code in codes])
+        await channel.send(msg)
+    else:
+        await channel.send(f"⚠️ Autosprawdzenie ({now}) — nie udało się pobrać kodów!")
 
 bot.run(TOKEN)
-
 
 
 
