@@ -24,48 +24,38 @@ async def on_ready():
 
 @bot.command()
 async def sprawdz(ctx):
-    await ctx.send("🔄 Sprawdzam kody...")
+    await ctx.send("🔄 Sprawdzam kody Fortnite...")
 
+    API_KEY = os.getenv("API_KEY")
     if not API_KEY:
-        await ctx.send("❌ Brak API_KEY w zmiennych środowiskowych!")
-        print("❌ DEBUG: API_KEY is None")
+        await ctx.send("❌ Brak API_KEY w zmiennych!")
         return
 
-    url = "https://fortniteapi.io/v1/codes/list"
+    url = "https://fortniteapi.io/v1/game/codes?lang=en"
     headers = {"Authorization": API_KEY}
 
-    print("🔍 DEBUG: Wysyłam zapytanie do API...")
-    print(f"🔍 DEBUG: URL = {url}")
-    print(f"🔍 DEBUG: API_KEY preview = {API_KEY[:4]}...{API_KEY[-4:]}")
-
-    try:
-        response = requests.get(url, headers=headers)
-        print(f"🔍 DEBUG: Status = {response.status_code}")
-        print(f"🔍 DEBUG: Response = {response.text}")
-    except Exception as e:
-        await ctx.send("❌ Wyjątek podczas połączenia z API")
-        print(f"❌ DEBUG ERROR: {e}")
-        return
+    response = requests.get(url, headers=headers)
 
     if response.status_code != 200:
-        await ctx.send(f"❌ API zwróciło błąd: {response.status_code}")
+        await ctx.send(f"❌ API ERROR: {response.status_code}")
+        print("API RESPONSE:", response.text)
         return
 
-    try:
-        data = response.json()
-    except:
-        await ctx.send("⚠️ API nie zwróciło JSON!")
-        return
-
+    data = response.json()
     codes = data.get("codes", [])
 
     if not codes:
-        await ctx.send("😕 Dzisiaj brak nowych kodów!")
-    else:
-        msg = "✅ Dzisiejsze kody Fortnite:\n"
-        for c in codes:
-            msg += f"> 🎯 `{c['code']}` — {c.get('title','Brak opisu')}\n"
-        await ctx.send(msg)
+        await ctx.send("😕 Dzisiaj brak kodów!")
+        return
+
+    message = "✅ Dzisiejsze kody Fortnite:\n\n"
+    for c in codes:
+        code = c.get("code", "???")
+        desc = c.get("title", "Brak opisu")
+        message += f"🎯 `{code}` — {desc}\n"
+
+    await ctx.send(message)
+
 
 
 @tasks.loop(minutes=5)
@@ -80,6 +70,7 @@ async def check_codes():
         await channel.send(f"⏰ Autosprawdzenie kodów ({now} UTC) — użyj !sprawdz")
 
 bot.run(TOKEN)
+
 
 
 
