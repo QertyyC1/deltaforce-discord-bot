@@ -5,6 +5,8 @@ import requests
 from datetime import datetime
 
 TOKEN = os.getenv("TOKEN")
+API_KEY = os.getenv("API_KEY")
+CHANNEL_ID = os.getenv("CHANNEL_ID")
 
 if not TOKEN:
     print("❌ DEBUG: TOKEN is None — brak zmiennej środowiskowej!")
@@ -13,7 +15,6 @@ else:
 
 intents = discord.Intents.default()
 intents.message_content = True
-
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
@@ -23,39 +24,44 @@ async def on_ready():
 
 @bot.command()
 async def sprawdz(ctx):
-    """Sprawdza dzisiejsze kody i wysyła na kanał"""
     await ctx.send("🔄 Sprawdzam kody...")
 
-    url = "https://fortniteapi.io/v1/game/codes"
-    headers = {"Authorization": os.getenv("API_KEY")}
-
-    response = requests.get(url, headers=headers)
-    if response.status_code != 200:
-        await ctx.send("❌ Brak odpowiedzi API")
+    if not API_KEY:
+        await ctx.send("❌ Brak API_KEY w zmiennych środowiskowych!")
         return
 
-    data = response.json()
+    url = "https://fortniteapi.io/v1/codes/list"
+    headers = {"Authorization": API_KEY}
+
+    try:
+        response = requests.get(url, headers=headers)
+        data = response.json()
+    except:
+        await ctx.send("❌ Błąd połączenia z API")
+        return
+
     codes = data.get("codes", [])
 
     if not codes:
         await ctx.send("😕 Dzisiaj brak nowych kodów!")
     else:
-        msg = "✅ Dzisiejsze kody Fortnite:\n" + "\n".join([f"- `{c['code']}`" for c in codes])
+        msg = "✅ Dzisiejsze kody Fortnite:\n"
+        for c in codes:
+            msg += f"> 🎯 `{c['code']}` — {c.get('title','Brak opisu')}\n"
         await ctx.send(msg)
 
 @tasks.loop(minutes=5)
 async def check_codes():
-    """Automatyczne sprawdzanie kodów co 5 min"""
-    channel_id = os.getenv("CHANNEL_ID")
-    if not channel_id:
+    if not CHANNEL_ID:
         print("❌ CHANNEL_ID nie ustawione!")
         return
 
-    channel = bot.get_channel(int(channel_id))
+    channel = bot.get_channel(int(CHANNEL_ID))
     if channel:
         now = datetime.utcnow().strftime("%H:%M")
         await channel.send(f"⏰ Autosprawdzenie kodów ({now} UTC) — użyj !sprawdz")
 
 bot.run(TOKEN)
+
 
 
