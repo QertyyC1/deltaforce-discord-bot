@@ -3,6 +3,7 @@ import discord
 from discord.ext import commands, tasks
 import requests
 from datetime import datetime
+from bs4 import BeautifulSoup
 
 TOKEN = os.getenv("TOKEN")
 API_KEY = os.getenv("API_KEY")
@@ -24,39 +25,34 @@ async def on_ready():
 
 @bot.command()
 async def sprawdz(ctx):
-    await ctx.send("🔄 Sprawdzam kody Fortnite...")
+    await ctx.send("🔄 Pobieram kody z DeltaForceTools.gg...")
 
-    API_KEY = os.getenv("API_KEY")
-    if not API_KEY:
-        await ctx.send("❌ Brak API_KEY w zmiennych!")
+    url = "https://deltaforcetools.gg"
+
+    try:
+        response = requests.get(url, timeout=10)
+    except Exception as e:
+        await ctx.send(f"❌ Błąd połączenia: {e}")
         return
-
-    url = "https://fortniteapi.io/v1/game/codes?lang=en"
-    headers = {"Authorization": API_KEY}
-
-    response = requests.get(url, headers=headers)
 
     if response.status_code != 200:
-        await ctx.send(f"❌ API ERROR: {response.status_code}")
-        print("API RESPONSE:", response.text)
+        await ctx.send(f"❌ Błąd strony: {response.status_code}")
         return
 
-    data = response.json()
-    codes = data.get("codes", [])
+    soup = BeautifulSoup(response.text, "html.parser")
+    code_boxes = soup.select(".dailyCode-box span")  # selektor CSS
 
-    if not codes:
-        await ctx.send("😕 Dzisiaj brak kodów!")
+    codes = [c.text.strip() for c in code_boxes]
+
+    if len(codes) < 5:
+        await ctx.send("⚠️ Nie udało się pobrać pełnych danych!")
         return
 
-    message = "✅ Dzisiejsze kody Fortnite:\n\n"
-    for c in codes:
-        code = c.get("code", "???")
-        desc = c.get("title", "Brak opisu")
-        message += f"🎯 `{code}` — {desc}\n"
+    msg = "**✅ Dzisiejsze Daily Codes:**\n\n"
+    for i, code in enumerate(codes[:5], start=1):
+        msg += f"🔹 Kod {i}: `{code}`\n"
 
-    await ctx.send(message)
-
-
+    await ctx.send(msg)
 
 @tasks.loop(minutes=5)
 async def check_codes():
@@ -70,6 +66,7 @@ async def check_codes():
         await channel.send(f"⏰ Autosprawdzenie kodów ({now} UTC) — użyj !sprawdz")
 
 bot.run(TOKEN)
+
 
 
 
