@@ -70,3 +70,4 @@ async def daily_update():
 bot.run(TOKEN)
 
 
+# force redeploy
