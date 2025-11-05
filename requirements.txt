@@ -1,9 +1,8 @@
-discord.py
 requests
-beautifulsoup4
-requests_html
-
-
+discord.py
+lxml
+lxml_html_clean
+html5lib
 
 
 
