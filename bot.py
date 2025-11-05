@@ -24,6 +24,11 @@ def fetch_daily_codes():
         r = requests.get(url, timeout=10)
         if r.status_code != 200:
             print(f"❌ Błąd HTTP: {r.status_code}")
+
+            # DEBUG w razie błędu HTTP
+            with open("debug_deltaforce.html", "w", encoding="utf-8") as f:
+                f.write(r.text)
+            print("📄 DEBUG: zapisano HTML po błędzie HTTP")
             return None
 
         soup = BeautifulSoup(r.text, "html5lib")
@@ -32,23 +37,31 @@ def fetch_daily_codes():
         cards = soup.select("div.col-lg-3.col-sm-6.mb-4")
         if not cards:
             print("⚠️ Nie znaleziono kafelków z kodami — struktura strony się zmieniła?")
+            
+            # DEBUG gdy brak kafelków
+            with open("debug_deltaforce.html", "w", encoding="utf-8") as f:
+                f.write(r.text)
+            print("📄 DEBUG: zapisano HTML przy braku kafelków")
             return None
 
         codes = []
         for card in cards:
-            # Kod zawsze jest w <p> z samymi cyframi
             p_tags = card.find_all("p")
             for p in p_tags:
                 txt = p.get_text(strip=True)
                 if txt.isdigit():
                     codes.append(txt)
                     break
-
             if len(codes) >= 5:
                 break
 
         if not codes:
             print("⚠️ Nie udało się wydobyć żadnych kodów!")
+            
+            # DEBUG gdy brak kodów
+            with open("debug_deltaforce.html", "w", encoding="utf-8") as f:
+                f.write(r.text)
+            print("📄 DEBUG: zapisano HTML przy braku kodów")
             return None
 
         print("✅ Kody znalezione:", codes)
@@ -56,7 +69,17 @@ def fetch_daily_codes():
 
     except Exception as e:
         print("❌ Wyjątek podczas scrapowania:", e)
+        
+        # DEBUG — gdy request wywali wyjątek
+        try:
+            with open("debug_deltaforce.html", "w", encoding="utf-8") as f:
+                f.write(r.text)
+            print("📄 DEBUG: zapisano HTML w except")
+        except:
+            print("⚠️ Brak r.text — nie zapisano debug HTML")
+
         return None
+
 
 
         soup = BeautifulSoup(r.text, "html5lib")
@@ -140,6 +163,7 @@ async def check_codes():
         await channel.send(f"⚠️ Autosprawdzenie ({now}) — nie udało się pobrać kodów!")
 
 bot.run(TOKEN)
+
 
 
 
