@@ -28,20 +28,19 @@ def fetch_daily_codes():
 
         soup = BeautifulSoup(r.text, "html5lib")
 
-        # Zbieramy wszystkie kafelki Daily Codes
+        # Szukamy kart kodów
         cards = soup.select("div.col-lg-3.col-sm-6.mb-4")
         if not cards:
-            print("⚠️ Nie znaleziono kafelków z kodami")
+            print("⚠️ Nie znaleziono kafelków z kodami — struktura strony się zmieniła?")
             return None
 
         codes = []
-
         for card in cards:
-            # Każdy kod jest wewnątrz <p>
-            paragraphs = card.find_all("p")
-            for p in paragraphs:
+            # Kod zawsze jest w <p> z samymi cyframi
+            p_tags = card.find_all("p")
+            for p in p_tags:
                 txt = p.get_text(strip=True)
-                if txt.isdigit():  # kod to same cyfry
+                if txt.isdigit():
                     codes.append(txt)
                     break
 
@@ -49,15 +48,16 @@ def fetch_daily_codes():
                 break
 
         if not codes:
-            print("⚠️ Nie udało się odczytać żadnych kodów")
+            print("⚠️ Nie udało się wydobyć żadnych kodów!")
             return None
 
-        print("✅ Pobranie udane:", codes)
-        return codes
+        print("✅ Kody znalezione:", codes)
+        return codes[:5]
 
     except Exception as e:
-        print("❌ Błąd podczas scrapowania:", e)
+        print("❌ Wyjątek podczas scrapowania:", e)
         return None
+
 
         soup = BeautifulSoup(r.text, "html5lib")
 
@@ -140,6 +140,7 @@ async def check_codes():
         await channel.send(f"⚠️ Autosprawdzenie ({now}) — nie udało się pobrać kodów!")
 
 bot.run(TOKEN)
+
 
 
 
