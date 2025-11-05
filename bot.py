@@ -4,6 +4,7 @@ from discord.ext import commands, tasks
 import requests
 from datetime import datetime
 from bs4 import BeautifulSoup
+from requests_html import HTMLSession
 
 TOKEN = os.getenv("TOKEN")
 API_KEY = os.getenv("API_KEY")
@@ -25,25 +26,22 @@ async def on_ready():
 
 @bot.command()
 async def sprawdz(ctx):
-    await ctx.send("🔄 Pobieram Daily Codes z DeltaForceTools...")
-
-    url = "https://deltaforcetools.gg/api/codes.json"
+    await ctx.send("🔄 Pobieram Daily Codes z DeltaForceTools…")
 
     try:
-        response = requests.get(url, timeout=10)
+        session = HTMLSession()
+        r = session.get("https://deltaforcetools.gg/")
+        r.html.render(timeout=20)  # renderuje JS
     except Exception as e:
-        await ctx.send(f"❌ Błąd połączenia: {e}")
+        await ctx.send(f"❌ Błąd pobierania/renderowania: {e}")
         return
 
-    if response.status_code != 200:
-        await ctx.send(f"❌ Błąd API: {response.status_code}")
-        return
-
-    data = response.json()
-    codes = data.get("dailyCodes", [])
+    # Zakładam, że kody są w elementach .code-box lub podobnych
+    elements = r.html.find(".daily-codes-box span.code")  # przykładowy selektor
+    codes = [el.text for el in elements]
 
     if len(codes) < 5:
-        await ctx.send("⚠️ Brak pełnej listy kodów!")
+        await ctx.send("⚠️ Nie udało się pobrać pełnych danych!")
         return
 
     message = "**✅ Dzisiejsze Daily Codes:**\n\n"
@@ -51,8 +49,6 @@ async def sprawdz(ctx):
         message += f"🔹 Kod {i}: `{code}`\n"
 
     await ctx.send(message)
-
-
 
 @tasks.loop(minutes=5)
 async def check_codes():
@@ -66,6 +62,7 @@ async def check_codes():
         await channel.send(f"⏰ Autosprawdzenie kodów ({now} UTC) — użyj !sprawdz")
 
 bot.run(TOKEN)
+
 
 
 
