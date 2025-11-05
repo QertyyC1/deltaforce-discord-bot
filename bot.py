@@ -1,91 +1,72 @@
-import asyncio
-import datetime
-import os
-import aiohttp
+import discord
+from discord.ext import commands, tasks
 from bs4 import BeautifulSoup
-from discord.ext import commands
+import requests
+from datetime import time
 
-URL = "https://deltaforcetools.gg/"
-CHANNEL_ID = 000000000000000000  # <-- Tutaj wpisz ID kanału!
-BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
+TOKEN = "WSTAW_SWÓJ_TOKEN"
+CHANNEL_ID = 1435569396394233856  # Twój kanał
 
-async def fetch_html(session, url):
-    async with session.get(url, timeout=20) as resp:
-        resp.raise_for_status()
-        return await resp.text()
+intents = discord.Intents.default()
+intents.message_content = True
+bot = commands.Bot(command_prefix="!", intents=intents)
 
-def parse_daily_codes(html):
-    soup = BeautifulSoup(html, "html.parser")
-    results = {}
-    header = soup.find(lambda tag: tag.name in ["h2", "h3"] and "Daily Codes" in tag.get_text())
-    if not header:
-        return results
-    elem = header.find_next_sibling()
-    count = 0
-    while elem and count < 10:
-        map_name = elem.get_text(strip=True)
-        code_elem = elem.find_next_sibling()
-        date_elem = code_elem.find_next_sibling() if code_elem else None
-        if code_elem and date_elem:
-            code = code_elem.get_text(strip=True)
-            date_text = date_elem.get_text(strip=True)
-            results[map_name] = {"code": code, "date": date_text}
-            elem = date_elem.find_next_sibling()
+
+def get_daily_codes():
+    try:
+        url = "https://deltaforcetools.gg"
+        response = requests.get(url, timeout=10)
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        # Szukamy sekcji Daily Codes
+        codes_section = soup.find("div", {"class": "code-grid"})
+        codes = [item.text.strip() for item in codes_section.find_all("p")]
+
+        if len(codes) >= 5:
+            return codes[:5]
         else:
-            break
-        count += 1
-    return results
+            return None
+    except Exception as e:
+        print("Błąd przy pobieraniu kodów:", e)
+        return None
 
-class MyBot(commands.Bot):
-    def __init__(self):
-        super().__init__(command_prefix="!", intents=commands.Intents.default())
 
-    async def on_ready(self):
-        print(f"✅ Bot online jako: {self.user}")
-        self.loop.create_task(self.daily_job())
+@bot.event
+async def on_ready():
+    print(f"✅ Bot zalogowany jako {bot.user}")
+    daily_update.start()
 
-    async def daily_job(self):
-        while True:
-            now = datetime.datetime.now()
-            next_run = now.replace(hour=1, minute=0, second=0, microsecond=0)
-            if next_run <= now:
-                next_run += datetime.timedelta(days=1)
-            wait_seconds = (next_run - now).total_seconds()
-            print(f"Czekam {wait_seconds} sekund do aktualizacji o 01:00...")
-            await asyncio.sleep(wait_seconds)
-            await self.check_and_send_codes()
-            await asyncio.sleep(24 * 3600)
 
-    async def check_and_send_codes(self):
-        async with aiohttp.ClientSession() as session:
-            try:
-                html = await fetch_html(session, URL)
-                codes = parse_daily_codes(html)
-            except Exception as e:
-                print("Błąd pobierania:", e)
-                return
-
-        if not hasattr(self, "last_codes"):
-            self.last_codes = None
-
-        if codes != self.last_codes:
-            self.last_codes = codes
-            channel = self.get_channel(CHANNEL_ID)
-            if not channel:
-                print("Nie mogę znaleźć kanału!")
-                return
-
-            message = "**🟢 Daily Codes — Delta Force Tools**\n"
-            for map_name, info in codes.items():
-                message += f"• **{map_name}:** `{info['code']}` *(data: {info['date']})*\n"
-
-            await channel.send(message)
-            print("✅ Wysłano aktualizację!")
-
-bot = MyBot()
-
-if __name__ == "__main__":
-    if not BOT_TOKEN:
-        print("⚠️ Brak tokena! Ustaw zmienną środowiskową: DISCORD_BOT_TOKEN")
+@commands.is_owner()
+@bot.command()
+async def codes(ctx):
+    codes = get_daily_codes()
+    if codes:
+        await ctx.send(
+            "**🎯 Daily Codes:**\n"
+            + "\n".join([f"> `{c}`" for c in codes])
+        )
     else:
-        bot.run(BOT_TOKEN)
+        await ctx.send("❌ Nie udało się pobrać aktualnych kodów.")
+
+
+@tasks.loop(time=time(hour=1, minute=0, second=0))  # Wysyła o 01:00
+async def daily_update():
+    channel = bot.get_channel(CHANNEL_ID)
+    if not channel:
+        print("❌ Nie znaleziono kanału!")
+        return
+
+    codes = get_daily_codes()
+    if codes:
+        await channel.send(
+            "**📌 Daily Codes (Auto Update):**\n"
+            + "\n".join([f"> `{c}`" for c in codes])
+        )
+    else:
+        await channel.send("⚠️ Błąd podczas automatycznej aktualizacji kodów.")
+
+
+bot.run(TOKEN)
+
+
