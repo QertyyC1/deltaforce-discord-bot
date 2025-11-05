@@ -53,12 +53,28 @@ async def on_ready():
     daily_task.start()
 
 # === Komenda ręczna: !codes ===
+
 @bot.command()
-async def codes(ctx):
-    codes = fetch_daily_codes()
-    msg = "📌 Daily Codes:\n" + "\n".join(f"• {c}" for c in codes)
-    await ctx.send(msg)
+async def sprawdz(ctx):
+    channel = bot.get_channel(int(os.getenv("CHANNEL_ID")))
+    if channel is None:
+        channel = ctx.channel
+    
+    await ctx.send("⏳ Pobieram Daily Codes...")
+
+    codes = get_daily_codes()  # ta funkcja już istnieje w Twoim kodzie
+
+    if codes:
+        msg = "**DeltaForce Daily Codes:**\n"
+        for i, code in enumerate(codes, 1):
+            msg += f"Code {i}: `{code}`\n"
+
+        await channel.send(msg)
+    else:
+        await ctx.send("⚠️ Błąd pobierania kodów!")
+
 
 # === Start bota ===
 bot.run(TOKEN)
+
 
