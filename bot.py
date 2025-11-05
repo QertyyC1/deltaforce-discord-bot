@@ -25,9 +25,9 @@ async def on_ready():
 
 @bot.command()
 async def sprawdz(ctx):
-    await ctx.send("🔄 Pobieram kody z DeltaForceTools.gg...")
+    await ctx.send("🔄 Pobieram Daily Codes...")
 
-    url = "https://deltaforcetools.gg"
+    url = "https://api.sfogamingnetwork.com/v1/codes"
 
     try:
         response = requests.get(url, timeout=10)
@@ -36,23 +36,22 @@ async def sprawdz(ctx):
         return
 
     if response.status_code != 200:
-        await ctx.send(f"❌ Błąd strony: {response.status_code}")
+        await ctx.send(f"❌ Błąd API: {response.status_code}")
         return
 
-    soup = BeautifulSoup(response.text, "html.parser")
-    code_boxes = soup.select(".dailyCode-box span")  # selektor CSS
-
-    codes = [c.text.strip() for c in code_boxes]
+    data = response.json()
+    codes = data.get("lightcodes", [])
 
     if len(codes) < 5:
-        await ctx.send("⚠️ Nie udało się pobrać pełnych danych!")
+        await ctx.send("⚠️ API nie zwróciło wszystkich kodów!")
         return
 
-    msg = "**✅ Dzisiejsze Daily Codes:**\n\n"
+    message = "**✅ Dzisiejsze Daily Codes:**\n\n"
     for i, code in enumerate(codes[:5], start=1):
-        msg += f"🔹 Kod {i}: `{code}`\n"
+        message += f"🔹 Kod {i}: `{code}`\n"
 
-    await ctx.send(msg)
+    await ctx.send(message)
+
 
 @tasks.loop(minutes=5)
 async def check_codes():
@@ -66,6 +65,7 @@ async def check_codes():
         await channel.send(f"⏰ Autosprawdzenie kodów ({now} UTC) — użyj !sprawdz")
 
 bot.run(TOKEN)
+
 
 
 
