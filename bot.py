@@ -9,7 +9,14 @@ from bs4 import BeautifulSoup
 TOKEN = os.getenv("DISCORD_TOKEN")
 CHANNEL_ID = int(os.getenv("CHANNEL_ID", "0"))
 
-bot = commands.Bot(command_prefix="!", intents=discord.Intents.default())
+# ✅ Włączone intents — to jest ta część, którą musisz mieć 👇
+intents = discord.Intents.default()
+intents.message_content = True
+intents.members = True
+intents.presences = True
+
+bot = commands.Bot(command_prefix="!", intents=intents)
+
 
 # ✅ Playwright Scraper
 def fetch_daily_codes():
@@ -76,6 +83,7 @@ async def on_ready():
 
 
 bot.run(TOKEN)
+
 
 
 
