@@ -1,6 +1,4 @@
-requests
 discord.py
+playwright
 beautifulsoup4
-html5lib
-
 
