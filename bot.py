@@ -1,162 +1,81 @@
 import os
 import discord
+import asyncio
 from discord.ext import commands, tasks
-import requests
-from bs4 import BeautifulSoup
 from datetime import datetime
+from playwright.sync_api import sync_playwright
+from bs4 import BeautifulSoup
 
-TOKEN = os.getenv("TOKEN")
-CHANNEL_ID = os.getenv("CHANNEL_ID")
+TOKEN = os.getenv("DISCORD_TOKEN")
+CHANNEL_ID = int(os.getenv("CHANNEL_ID", "0"))
 
-if not TOKEN:
-    print("❌ Debug: TOKEN brak zmiennej środowiskowej!")
-else:
-    print(f"✅ Debug: TOKEN OK length={len(TOKEN)} preview={TOKEN[:4]}...{TOKEN[-4:]}")
+bot = commands.Bot(command_prefix="!", intents=discord.Intents.default())
 
-intents = discord.Intents.default()
-intents.message_content = True
-
-bot = commands.Bot(command_prefix="!", intents=intents)
-
+# ✅ Playwright Scraper
 def fetch_daily_codes():
     url = "https://deltaforcetools.gg"
+
     try:
-        r = requests.get(url, timeout=10)
-        if r.status_code != 200:
-            print(f"❌ Błąd HTTP: {r.status_code}")
-            return None
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.goto(url, timeout=25000)
+            page.wait_for_timeout(3500)  # czekanie na JS
 
-        soup = BeautifulSoup(r.text, "html.parser")
+            html = page.content()
+            browser.close()
 
-        # 🔍 DEBUG: pokaż pierwsze 2000 znaków HTML w logach
-        print("📄 DEBUG HTML PREVIEW:")
-        print(r.text[:2000])
-        print("----- KONIEC PODGLĄDU HTML -----")
+        soup = BeautifulSoup(html, "html.parser")
+        p_tags = soup.find_all("p")
 
-        cards = soup.select("div.col-lg-3.col-sm-6.mb-4")
-        if not cards:
-            print("⚠️ Nie znaleziono kafelków z kodami — struktura strony się zmieniła?")
-            return None
-
-        codes = []
-        for card in cards:
-            p_tags = card.find_all("p")
-            for p in p_tags:
-                txt = p.get_text(strip=True)
-                if txt.isdigit():
-                    codes.append(txt)
-                    break
-            if len(codes) >= 5:
-                break
-
-        if not codes:
-            print("⚠️ Nie udało się wydobyć żadnych kodów!")
-            return None
-
-        print("✅ Kody znalezione:", codes)
-        return codes[:5]
+        codes = [p.get_text(strip=True) for p in p_tags if p.get_text(strip=True).isdigit()]
+        return codes[:5] if len(codes) >= 5 else None
 
     except Exception as e:
-        print("❌ Wyjątek podczas scrapowania:", e)
-        return None
-
-        
-        # DEBUG — gdy request wywali wyjątek
-        try:
-            with open("debug_deltaforce.html", "w", encoding="utf-8") as f:
-                f.write(r.text)
-            print("📄 DEBUG: zapisano HTML w except")
-        except:
-            print("⚠️ Brak r.text — nie zapisano debug HTML")
-
+        print("❌ Błąd Playwright:", e)
         return None
 
 
+# ✅ Komenda "!sprawdz"
+@bot.command()
+async def sprawdz(ctx):
+    await ctx.send("🔄 Pobieram Daily Codes...")
+    codes = fetch_daily_codes()
 
-        soup = BeautifulSoup(r.text, "html5lib")
+    if codes:
+        msg = "\n".join(f"✅ Kod #{i+1}: `{code}`" for i, code in enumerate(codes))
+        await ctx.send(msg)
+    else:
+        await ctx.send("❌ Nie udało się pobrać kodów 😕")
 
-        # Znajdź nagłówek „Daily Codes”
-        header = soup.find("h2", string=lambda s: s and "Daily Codes" in s)
-        if not header:
-            print("⚠️ Nie znaleziono nagłówka 'Daily Codes'")
-            return None
 
-        # Następne elementy — zazwyczaj <div> lub sekcja z listą
-        container = header.find_next_sibling()
-        if not container:
-            print("⚠️ Nie znaleziono kontenera po nagłówku")
-            return None
+# ✅ Auto-Check co godzinę
+@tasks.loop(hours=1)
+async def auto_check():
+    if not CHANNEL_ID:
+        return
 
-        # Zbierz wszystkie bloki tekstu w tym kontenerze
-        texts = []
-        for el in container.find_all(recursive=False):
-            txt = el.get_text(strip=True)
-            if txt:
-                texts.append(txt)
+    channel = bot.get_channel(CHANNEL_ID)
+    if not channel:
+        return
 
-        # texts zawiera naprzemienne: mapa, kod, data, godzina
-        codes = []
-        import re
-        for txt in texts:
-            # szukamy ciągu cyfr minimum 2 cyfry
-            m = re.search(r"\b\d{2,}\b", txt)
-            if m:
-                codes.append(m.group(0))
-            if len(codes) >= 5:
-                break
+    codes = fetch_daily_codes()
+    now = datetime.utcnow().strftime("%H:%M UTC")
 
-        if not codes:
-            print("⚠️ Nie udało się wyciągnąć żadnych kodów z tekstów:", texts[:10])
-            return None
+    if codes:
+        msg = f"⏰ Auto-check {now}\n" + "\n".join(f"✅ Kod #{i+1}: `{code}`" for i, code in enumerate(codes))
+        await channel.send(msg)
+    else:
+        await channel.send(f"⚠️ Auto-check {now} — błąd pobierania!")
 
-        return codes[:5]
-
-    except Exception as e:
-        print("❌ Błąd podczas scrapowania:", e)
-        return None
 
 @bot.event
 async def on_ready():
     print(f"✅ Bot zalogowany jako: {bot.user}")
-    check_codes.start()
+    auto_check.start()
 
-@bot.command()
-async def sprawdz(ctx):
-    await ctx.send("🔄 Pobieram Daily Codes...")
-
-    codes = fetch_daily_codes()
-    if not codes:
-        await ctx.send("❌ Nie udało się pobrać kodów! 😕")
-        return
-
-    msg = "**✅ Dzisiejsze Daily Codes:**\n"
-    for idx, code in enumerate(codes, start=1):
-        msg += f"• Kod {idx}: `{code}`\n"
-    await ctx.send(msg)
-
-@tasks.loop(hours=24)
-async def check_codes():
-    if not CHANNEL_ID:
-        print("❌ Brak CHANNEL_ID w zmiennych środowiskowych.")
-        return
-
-    channel = bot.get_channel(int(CHANNEL_ID))
-    if not channel:
-        print("❌ Nie mogę znaleźć kanału o ID:", CHANNEL_ID)
-        return
-
-    now = datetime.utcnow().strftime("%H:%M UTC")
-    codes = fetch_daily_codes()
-    if codes:
-        msg = "**🕒 Auto-Daily Codes:**\n" + "\n".join([f"• `{code}`" for code in codes])
-        await channel.send(msg)
-    else:
-        await channel.send(f"⚠️ Autosprawdzenie ({now}) — nie udało się pobrać kodów!")
 
 bot.run(TOKEN)
-
-
-
 
 
 
