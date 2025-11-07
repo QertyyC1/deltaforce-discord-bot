@@ -1,3 +1,5 @@
 discord.py
 playwright
 beautifulsoup4
+tzdata
+
