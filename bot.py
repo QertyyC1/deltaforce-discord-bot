@@ -7,7 +7,6 @@ from zoneinfo import ZoneInfo
 
 import discord
 from discord.ext import commands, tasks
-from playwright.async_api import async_playwright
 from bs4 import BeautifulSoup
 
 # ---- Konfiguracja (ENV) ----
@@ -166,6 +165,7 @@ async def on_ready():
 # ---- Uruchomienie bota ----
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
+
 
 
 
