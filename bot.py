@@ -206,8 +206,7 @@ def home():
     return "DeltaForceDailyCodes bot is running."
 
 def run_web():
-    port = int(os.getenv("PORT", "8080"))
-    # flask in production is fine for keep-alive; Railway uses it only to keep container alive
+    port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
 
 # start webserver in thread
@@ -237,6 +236,7 @@ bot.loop.create_task(keepalive())
 # ---- Run the bot ----
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
+
 
 
 
