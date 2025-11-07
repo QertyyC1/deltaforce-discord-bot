@@ -219,7 +219,7 @@ async def keepalive():
     while not bot.is_closed():
         try:
             async with aiohttp.ClientSession() as session:
-                await session.get("https://DELTA_FORCE_KEEPALIVE_URL")  # <- zmienimy za chwilę
+                await session.get("https://deltaforce-discord-bot-production.up.railway.app")  # <- zmienimy za chwilę
         except:
             pass
         await asyncio.sleep(30)
@@ -237,6 +237,7 @@ bot.loop.create_task(keepalive())
 # ---- Run the bot ----
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
+
 
 
 
