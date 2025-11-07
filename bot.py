@@ -24,101 +24,70 @@ def fetch_daily_codes():
             "AppleWebKit/537.36 (KHTML, like Gecko) "
             "Chrome/120.0.0.0 Safari/537.36"
         ),
-        "Accept-Language": "pl,en;q=0.8",
+        "Accept-Language": "en,pl;q=0.9"
     }
 
     try:
         resp = requests.get(url, headers=headers, timeout=10)
         resp.raise_for_status()
-        html = resp.text
-        soup = BeautifulSoup(html, "html.parser")
+        soup = BeautifulSoup(resp.text, "html.parser")
 
-        # 1) Najpierw: znajdź nagłówek "Daily Codes" i szukaj liczb tylko w jego sekcji
-        header = soup.find(lambda t: t.name in ("h1","h2","h3") and t.get_text(strip=True).lower().find("daily codes") != -1)
+        # 1) Znajdź nagłówek "Daily Codes"
+        header = soup.find(lambda t: t.name in ("h1","h2","h3") and "daily codes" in t.get_text(strip=True).lower())
+
+        blob = ""
         if header:
-            section_texts = []
+            # zbieramy tekst kolejnych siblings (cała sekcja)
+            parts = []
             for sib in header.find_next_siblings():
-                # przerwij jak trafimy na kolejny nagłówek (koniec sekcji)
                 if sib.name and sib.name.lower() in ("h1","h2","h3"):
                     break
-                section_texts.append(sib.get_text(" ", strip=True))
-                # ograniczenie bezpieczeństwa
-                if len(" ".join(section_texts)) > 4000:
+                parts.append(sib.get_text(" ", strip=True))
+                if len(" ".join(parts)) > 10000:
                     break
-            section_blob = " ".join(section_texts)
-            found = re.findall(r"\b\d{3,12}\b", section_blob)  # liczby 3-12 cyfr
-            if found:
-                # usuń duplikaty zachowując kolejność
-                uniq = []
-                for x in found:
-                    if x not in uniq:
-                        uniq.append(x)
-                    if len(uniq) >= 5:
-                        break
-                if uniq:
-                    return uniq[:5]
+            blob = " ".join(parts)
+        else:
+            # fallback: pobierz cały body
+            body = soup.body
+            blob = body.get_text(" ", strip=True) if body else soup.get_text(" ", strip=True)
 
-        # 2) Fallback: szukaj "kafelków" (bootstrap classes) — często używane przez stronę
-        cards = soup.select("div.col-lg-3.col-sm-6.mb-4")
-        if cards:
-            codes = []
-            for card in cards:
-                text = card.get_text(" ", strip=True)
-                m = re.search(r"\b\d{3,12}\b", text)
-                if m:
-                    codes.append(m.group(0))
-                if len(codes) >= 5:
-                    break
-            if codes:
-                return codes[:5]
+        # DEBUG (usuń/zakomentuj jeśli nie chcesz logów)
+        print("DEBUG: Sekcja blob (pierwsze 1200 chars):")
+        print(blob[:1200])
+        print("----- KONIEC PODGLĄDU -----")
 
-        # 3) Fallback: span z font-bold (często pokazuje sam kod)
-        bolds = soup.select("span.font-bold, strong")
-        if bolds:
-            codes = []
-            for b in bolds:
-                t = b.get_text(strip=True)
-                if re.fullmatch(r"\d{3,12}", t):
-                    codes.append(t)
-                else:
-                    m = re.search(r"\b\d{3,12}\b", t)
-                    if m:
-                        codes.append(m.group(0))
-                if len(codes) >= 5:
-                    break
-            if codes:
-                return codes[:5]
+        # 2) Szukamy wzorca: <kod - 3..7 cyfr> następnie data YYYY/MM/DD
+        pattern = re.compile(r"\b(\d{3,7})\b[\s\S]{0,60}?\b(20\d{2}/\d{2}/\d{2})\b")
+        matches = pattern.findall(blob)
 
-        # 4) Ostateczny fallback: przeszukaj sekcję main/ body, ale filtruj kontekstami (unikaj nagłówków statystyk)
-        possible = []
-        for tag in soup.find_all(["p","span","div"]):
-            text = tag.get_text(" ", strip=True)
-            # odrzucaj ciągi które wyglądają jak duże id (np. page counters) — heurystyka
-            matches = re.findall(r"\b\d{3,12}\b", text)
-            for m in matches:
-                # odrzucaj jeśli tekst zawiera słowa typu "views","members","online","players" (statystyki)
-                ctx = text.lower()
-                if any(k in ctx for k in ("views","members","online","players","users","subscribers","votes")):
-                    continue
-                possible.append(m)
-            if len(possible) >= 20:
+        codes = []
+        for m in matches:
+            code = m[0]
+            if code not in codes:
+                codes.append(code)
+            if len(codes) >= 5:
                 break
-        if possible:
-            # wybierz unikalne i pierwsze 5
+
+        # 3) Jeżeli nic nie znaleziono — dajemy ostateczny, bardziej liberalny fallback:
+        if not codes:
+            fallback = re.findall(r"\b\d{3,7}\b", blob)
             uniq = []
-            for x in possible:
-                if x not in uniq:
-                    uniq.append(x)
+            for f in fallback:
+                if f not in uniq:
+                    uniq.append(f)
                 if len(uniq) >= 5:
                     break
-            if uniq:
-                return uniq[:5]
+            codes = uniq
 
-        # nic nie znaleziono
-        return None
+        if not codes:
+            print("⚠️ fetch_daily_codes: nie znaleziono kodów.")
+            return None
+
+        print("✅ fetch_daily_codes -> znalezione:", codes[:5])
+        return codes[:5]
 
     except Exception as e:
-        print("Błąd pobierania kodów (fetch_daily_codes):", e)
+        print("❌ fetch_daily_codes EX:", e)
         return None
 
 
@@ -186,6 +155,7 @@ async def on_ready():
 
 
 bot.run(TOKEN)
+
 
 
 
