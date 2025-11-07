@@ -2,6 +2,7 @@
 import os
 import asyncio
 import tempfile
+import aiohttp
 from datetime import datetime, timedelta, timezone
 from threading import Thread
 
@@ -212,9 +213,31 @@ def run_web():
 # start webserver in thread
 Thread(target=run_web, daemon=True).start()
 
+# 🔄 Anti-idle ping co 30 sekund
+async def keepalive():
+    await bot.wait_until_ready()
+    while not bot.is_closed():
+        try:
+            async with aiohttp.ClientSession() as session:
+                await session.get("https://DELTA_FORCE_KEEPALIVE_URL")  # <- zmienimy za chwilę
+        except:
+            pass
+        await asyncio.sleep(30)
+
+@bot.event
+async def on_disconnect():
+    print("⚠️ BOT DISCONNECTED — trying to reconnect...")
+
+@bot.event
+async def on_resume():
+    print("✅ Reconnected successfully!")
+    
+bot.loop.create_task(keepalive())
+
 # ---- Run the bot ----
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
+
 
 
 
