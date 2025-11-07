@@ -3,6 +3,7 @@ import discord
 import asyncio
 import requests
 import re
+import threading
 from bs4 import BeautifulSoup
 from discord.ext import commands, tasks
 from datetime import datetime
@@ -135,12 +136,26 @@ async def auto_check():
 
 @bot.event
 async def on_ready():
+    # Jednorazowy test scraper'a po starcie + log HTML
+    codes = fetch_daily_codes()
+    print("✅ Test codes on startup:", codes)
     print(f"✅ Bot zalogowany jako: {bot.user}")
     auto_check.start()
 
 # Włączamy webserver, aby Railway nie ubijał kontenera
+app = Flask("DeltaForceCodesBot")
+
+@app.route('/')
+def home():
+    return "Bot działa"
+
+def run_web():
+    app.run(host="0.0.0.0", port=8080)
+
+threading.Thread(target=run_web).start()
 Thread(target=run_web).start()
 bot.run(TOKEN)
+
 
 
 
