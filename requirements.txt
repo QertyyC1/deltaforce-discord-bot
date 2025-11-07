@@ -1,5 +1,2 @@
-discord.py
-playwright
-beautifulsoup4
-tzdata
-
+discord.py==2.4.0
+requests
