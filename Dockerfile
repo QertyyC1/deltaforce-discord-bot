@@ -1,7 +1,11 @@
 FROM mcr.microsoft.com/playwright/python:latest
 
 # ✅ Dodaj tę linię:
-RUN apt-get update && apt-get install -y tzdata
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y tzdata && \
+    ln -fs /usr/share/zoneinfo/Europe/Warsaw /etc/localtime && \
+    dpkg-reconfigure --frontend noninteractive tzdata
+
 
 WORKDIR /app
 
