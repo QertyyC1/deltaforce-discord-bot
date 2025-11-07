@@ -29,79 +29,21 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 last_codes = []
 
 def fetch_daily_codes():
-    url = "https://deltaforcetools.gg"
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/120.0.0.0 Safari/537.36"
-        ),
-        "Accept-Language": "en,pl;q=0.9"
-    }
-
     try:
-        resp = requests.get(url, headers=headers, timeout=10)
-        resp.raise_for_status()
-        soup = BeautifulSoup(resp.text, "html.parser")
-
-        # 1) Znajdź nagłówek "Daily Codes"
-        header = soup.find(lambda t: t.name in ("h1","h2","h3") and "daily codes" in t.get_text(strip=True).lower())
-
-        blob = ""
-        if header:
-            # zbieramy tekst kolejnych siblings (cała sekcja)
-            parts = []
-            for sib in header.find_next_siblings():
-                if sib.name and sib.name.lower() in ("h1","h2","h3"):
-                    break
-                parts.append(sib.get_text(" ", strip=True))
-                if len(" ".join(parts)) > 10000:
-                    break
-            blob = " ".join(parts)
-        else:
-            # fallback: pobierz cały body
-            body = soup.body
-            blob = body.get_text(" ", strip=True) if body else soup.get_text(" ", strip=True)
-
-        # DEBUG (usuń/zakomentuj jeśli nie chcesz logów)
-        print("DEBUG: Sekcja blob (pierwsze 1200 chars):")
-        print(blob[:1200])
-        print("----- KONIEC PODGLĄDU -----")
-
-        # 2) Szukamy wzorca: <kod - 3..7 cyfr> następnie data YYYY/MM/DD
-        pattern = re.compile(r"\b(\d{3,7})\b[\s\S]{0,60}?\b(20\d{2}/\d{2}/\d{2})\b")
-        matches = pattern.findall(blob)
+        response = requests.get("https://deltaforcetools.gg", timeout=10)
+        soup = BeautifulSoup(response.text, "html.parser")
 
         codes = []
-        for m in matches:
-            code = m[0]
-            if code not in codes:
-                codes.append(code)
-            if len(codes) >= 5:
-                break
+        for span in soup.find_all("span", class_="greenText"):
+            text = span.get_text(strip=True)
+            if text.isdigit() and len(text) == 4:
+                codes.append(text)
 
-        # 3) Jeżeli nic nie znaleziono — dajemy ostateczny, bardziej liberalny fallback:
-        if not codes:
-            fallback = re.findall(r"\b\d{3,7}\b", blob)
-            uniq = []
-            for f in fallback:
-                if f not in uniq:
-                    uniq.append(f)
-                if len(uniq) >= 5:
-                    break
-            codes = uniq
-
-        if not codes:
-            print("⚠️ fetch_daily_codes: nie znaleziono kodów.")
-            return None
-
-        print("✅ fetch_daily_codes -> znalezione:", codes[:5])
-        return codes[:5]
+        return codes if codes else None
 
     except Exception as e:
-        print("❌ fetch_daily_codes EX:", e)
+        print("❌ fetch_daily_codes ERROR:", e)
         return None
-
 
 async def delete_old_bot_messages(channel, limit=50):
     """Usuwa poprzednie wiadomości bota aby nie było spamu"""
@@ -168,6 +110,7 @@ async def on_ready():
 # Włączamy webserver, aby Railway nie ubijał kontenera
 Thread(target=run_web).start()
 bot.run(TOKEN)
+
 
 
 
