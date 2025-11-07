@@ -43,11 +43,6 @@ async def delete_old_bot_messages(channel, limit=50):
 # ---- Playwright scraper + screenshots ----
 # returns list of file paths to screenshots (in tmp files) or None
 async def fetch_and_screenshot_tiles(url="https://deltaforcetools.gg/daily-codes"):
-    """
-    Otwiera stronę z Playwright (async), czeka aż kafelki się pojawią,
-    dla każdego kafelka robi screenshot elementu i zapisuje do temp file.
-    Zwraca listę ścieżek do plików.
-    """
     out_files = []
     try:
         async with async_playwright() as p:
@@ -57,78 +52,59 @@ async def fetch_and_screenshot_tiles(url="https://deltaforcetools.gg/daily-codes
                 "--disable-dev-shm-usage",
                 "--disable-gpu",
             ])
-            page = await browser.new_page()
-            # udawaj przeglądarkę
-            await page.set_extra_http_headers({
-                "Accept-Language": "en,pl;q=0.9"
-            })
-            await page.goto(url, timeout=30000)
-            # Czekamy na pojawienie się kafelków — selector może się różnić, próbujemy kilku
-            try:
-                # standardowy kafelek używany wcześniej
-                await page.wait_for_selector("div.col-lg-3.col-sm-6.mb-4", timeout=10000)
-                card_selector = "div.col-lg-3.col-sm-6.mb-4"
-            except Exception:
-                # fallback do bardziej ogólnego selektora: elementy z green text
-                try:
-                    await page.wait_for_selector("span.greenText", timeout=8000)
-                    # będziemy screenshotować rodzica span.greenText
-                    card_selector = "span.greenText"
-                except Exception:
-                    # ostatnia deska ratunku: szukamy kafelków po aria roles / article
-                    try:
-                        await page.wait_for_selector("article, .card, .tile", timeout=8000)
-                        card_selector = "article, .card, .tile"
-                    except Exception as e:
-                        print("❌ Nie znaleziono selektora kafelków:", e)
-                        await browser.close()
-                        return None
+            page = await browser.new_page(
+                viewport={"width": 1280, "height": 2000},
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+            )
 
-            # znajdź wszystkie elementy pasujące
-            elements = await page.query_selector_all(card_selector)
-            if not elements:
-                print("⚠️ Brak elementów do screenshotowania.")
-                await browser.close()
-                return None
+            await page.goto(url, wait_until="networkidle", timeout=45000)
 
-            # ograniczamy do 10 dla bezpieczeństwa (zwykle 5)
-            max_take = min(len(elements), 10)
-            for i in range(max_take):
-                el = elements[i]
-                # jeśli selektor to span.greenText - podejmij rodzica 3 poziomy w górę
-                tag_name = await el.evaluate("(e) => e.tagName.toLowerCase()")
-                if tag_name == "span":
-                    # spróbuj użyć rodzica jako kafelka
-                    parent = await el.evaluate_handle("(e) => e.closest('div') || e.parentElement")
-                    # handle to element
-                    try:
-                        # create a temp file
-                        tf = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
-                        path = tf.name
-                        tf.close()
-                        await parent.as_element().screenshot(path=path)
-                        out_files.append(path)
-                        await parent.dispose()
-                    except Exception:
-                        # fallback screenshot of element itself
-                        tf = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
-                        path = tf.name
-                        tf.close()
-                        await el.screenshot(path=path)
-                        out_files.append(path)
-                else:
-                    # normal screenshot
+            # ✅ Czekamy dodatkowo aż JS przetworzy wyniki
+            await page.wait_for_timeout(6000)
+
+            # ✅ Scrollujemy stronę, żeby wymusić lazy-load
+            for y in range(0, 5000, 500):
+                await page.mouse.wheel(0, 500)
+                await page.wait_for_timeout(500)
+
+            # ✅ Listă możliwych selectorów kafelków
+            selectors = [
+                "div.col-lg-3.col-sm-6.mb-4",
+                ".col-12.col-md-6.col-lg-4.col-xl-3",
+                "article",
+                ".card",
+                ".tile",
+                "span.greenText"
+            ]
+
+            elements = []
+            for sel in selectors:
+                found = await page.query_selector_all(sel)
+                if len(found) > len(elements):
+                    elements = found
+
+            if elements:
+                print(f"✅ Znaleziono {len(elements)} elementów — robimy screenshoty kafelków!")
+                for i, el in enumerate(elements[:10]):
                     tf = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
                     path = tf.name
                     tf.close()
                     await el.screenshot(path=path)
                     out_files.append(path)
+            else:
+                # ❌ Brak kafelków — robimy screenshot całej strony
+                print("⚠️ Brak elementów — wykonujemy fallback screenshot całej strony!")
+                tf = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+                path = tf.name
+                tf.close()
+                await page.screenshot(path=path, full_page=True)
+                out_files.append(path)
 
             await browser.close()
             return out_files
 
     except Exception as e:
-        print("❌ Playwright error in fetch_and_screenshot_tiles:", e)
+        print("❌ Playwright FATAL:", e)
         return None
 
 # ---- Command: manual check ----
@@ -239,6 +215,7 @@ Thread(target=run_web, daemon=True).start()
 # ---- Run the bot ----
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
+
 
 
 
