@@ -29,22 +29,53 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 last_codes = []
 
 def fetch_daily_codes():
+    url = "https://deltaforcetools.gg"
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Connection": "keep-alive",
+    }
+
     try:
-        response = requests.get("https://deltaforcetools.gg", timeout=10)
-        soup = BeautifulSoup(response.text, "html.parser")
+        resp = requests.get(url, headers=headers, timeout=10)
+        resp.raise_for_status()
+        html = resp.text
 
+        # DEBUG
+        print("📄 DEBUG HTML PREVIEW:", html[:2000])
+        print("----- END PREVIEW -----")
+
+        soup = BeautifulSoup(html, "html.parser")
+
+        # Przykład selektora — zależy od struktury, dostosujemy po logu
         codes = []
-        for span in soup.find_all("span", class_="greenText"):
+        # załóżmy, że kod pojawia się w <span class="code-number"> lub podobnie
+        for span in soup.find_all("span", class_=re.compile(r"code|daily", re.I)):
             text = span.get_text(strip=True)
-            if text.isdigit() and len(text) == 4:
+            if text.isdigit() and (4 <= len(text) <= 8):
                 codes.append(text)
+            if len(codes) >= 5:
+                break
 
-        return codes if codes else None
+        if not codes:
+            # fallback 2: wszystkie <p> cyfry
+            for p in soup.find_all("p"):
+                text = p.get_text(strip=True)
+                if text.isdigit() and (4 <= len(text) <= 8):
+                    codes.append(text)
+                if len(codes) >= 5:
+                    break
+
+        return codes[:5] if codes else None
 
     except Exception as e:
         print("❌ fetch_daily_codes ERROR:", e)
         return None
-
 async def delete_old_bot_messages(channel, limit=50):
     """Usuwa poprzednie wiadomości bota aby nie było spamu"""
     try:
@@ -110,6 +141,7 @@ async def on_ready():
 # Włączamy webserver, aby Railway nie ubijał kontenera
 Thread(target=run_web).start()
 bot.run(TOKEN)
+
 
 
 
