@@ -1,4 +1,5 @@
-# bot.py
+# ✅ FULLY FIXED bot.py FOR RAILWAY ✅
+
 import os
 import asyncio
 import tempfile
@@ -9,42 +10,35 @@ from threading import Thread
 import discord
 from discord.ext import commands, tasks
 
-import requests
-from bs4 import BeautifulSoup
-
-# Playwright async
 from playwright.async_api import async_playwright
-
-# Flask keep-alive
 from flask import Flask
 
-# ---- Config (env) ----
+# ---- Config (env variables) ----
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 CHANNEL_ID = int(os.getenv("CHANNEL_ID", "0"))
+PUBLIC_URL = os.getenv("PUBLIC_URL", "https://google.com")  # ✅ zmieniaj tylko w env
 
 if not DISCORD_TOKEN:
-    print("❌ Brak DISCORD_TOKEN w env. Ustaw i restartuj.")
+    print("❌ Missing DISCORD_TOKEN!")
 if not CHANNEL_ID:
-    print("⚠️ CHANNEL_ID = 0 (nie ustawione) — auto-check nie wyśle niczego.")
+    print("⚠️ Missing CHANNEL_ID (auto messages disabled)")
 
-# ---- Discord bot setup ----
+# ---- Discord bot ----
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ---- helper: delete old bot messages ----
+# ---- Helper: Delete old bot messages ----
 async def delete_old_bot_messages(channel, limit=50):
     try:
         async for msg in channel.history(limit=limit):
             if msg.author == bot.user:
                 await msg.delete()
     except Exception as e:
-        print("Błąd podczas usuwania starych wiadomości:", e)
+        print("Błąd usuwania wiadomości:", e)
 
-# ---- Playwright scraper + screenshots ----
-# returns list of file paths to screenshots (in tmp files) or None
+# ---- Scraper ----
 async def fetch_and_screenshot_tiles(url="https://deltaforcetools.gg/daily-codes"):
-    out_files = []
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True, args=[
@@ -53,200 +47,120 @@ async def fetch_and_screenshot_tiles(url="https://deltaforcetools.gg/daily-codes
                 "--disable-dev-shm-usage",
                 "--disable-gpu",
             ])
-            page = await browser.new_page(
-                viewport={"width": 1280, "height": 2000},
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-            )
+            page = await browser.new_page(viewport={"width": 1280, "height": 2400})
 
             await page.goto(url, wait_until="networkidle", timeout=45000)
 
-            # ✅ Czekamy dodatkowo aż JS przetworzy wyniki
-            await page.wait_for_timeout(6000)
+            # ✅ Poczekaj aż kafelki się załadują
+            try:
+                await page.wait_for_selector("img", timeout=10000)
+            except:
+                print("⚠️ Nie wykryto obrazów — fallback")
+            
+            tiles = await page.query_selector_all("img")
+            tmpfiles = []
 
-            # ✅ Scrollujemy stronę, żeby wymusić lazy-load
-            for y in range(0, 5000, 500):
-                await page.mouse.wheel(0, 500)
-                await page.wait_for_timeout(500)
-
-            # ✅ Listă możliwych selectorów kafelków
-            selectors = [
-                "div.col-lg-3.col-sm-6.mb-4",
-                ".col-12.col-md-6.col-lg-4.col-xl-3",
-                "article",
-                ".card",
-                ".tile",
-                "span.greenText"
-            ]
-
-            elements = []
-            for sel in selectors:
-                found = await page.query_selector_all(sel)
-                if len(found) > len(elements):
-                    elements = found
-
-            if elements:
-                print(f"✅ Znaleziono {len(elements)} elementów — robimy screenshoty kafelków!")
-                for i, el in enumerate(elements[:10]):
-                    tf = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
-                    path = tf.name
-                    tf.close()
-                    await el.screenshot(path=path)
-                    out_files.append(path)
+            if tiles:
+                for i, tile in enumerate(tiles[:12]):
+                    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png").name
+                    await tile.screenshot(path=tmp)
+                    tmpfiles.append(tmp)
+                print(f"✅ Znaleziono kafelków: {len(tmpfiles)}")
             else:
-                # ❌ Brak kafelków — robimy screenshot całej strony
-                print("⚠️ Brak elementów — wykonujemy fallback screenshot całej strony!")
-                tf = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
-                path = tf.name
-                tf.close()
-                await page.screenshot(path=path, full_page=True)
-                out_files.append(path)
+                print("⚠️ Brak kafelków → screen całej strony")
+                tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png").name
+                await page.screenshot(path=tmp, full_page=True)
+                tmpfiles.append(tmp)
 
             await browser.close()
-            return out_files
+            return tmpfiles
 
     except Exception as e:
-        print("❌ Playwright FATAL:", e)
+        print("❌ Playwright Error:", e)
         return None
 
-# ---- Command: manual check ----
-@bot.command(name="sprawdz")
-async def cmd_sprawdz(ctx):
-    await ctx.send("🔄 Generuję zrzuty kafelków (może potrwać kilka sekund)...")
+# ---- Command ----
+@bot.command()
+async def sprawdz(ctx):
+    await ctx.send("🔄 Pobieram zrzuty kafelków...")
     files = await fetch_and_screenshot_tiles()
     if not files:
-        return await ctx.send("❌ Nie udało się pobrać kafelków / zrzutów 😕")
+        return await ctx.send("❌ Nie udało się pobrać 😕")
 
-    # usuń stare wiadomości bota w kanale
     await delete_old_bot_messages(ctx.channel)
 
-    # wyślij każdy obrazek jako osobny plik (wariant A)
-    for path in files:
-        try:
-            await ctx.send(file=discord.File(path))
-        except Exception as e:
-            print("Błąd wysyłania obrazka:", e)
-    await ctx.send(f"✅ Wysłano {len(files)} kafelków.")
-    # cleanup temp files
-    for p in files:
-        try:
-            os.remove(p)
-        except:
-            pass
+    for f in files:
+        await ctx.send(file=discord.File(f))
+        os.remove(f)
 
-# ---- Daily job (01:00 UTC) ----
-async def seconds_until_next_utc_run(hour_utc=1, minute_utc=0):
+    await ctx.send("✅ Gotowe!")
+
+# ---- Daily Auto Job ----
+async def seconds_until(hour=1):
     now = datetime.now(timezone.utc)
-    target = now.replace(hour=hour_utc, minute=minute_utc, second=0, microsecond=0)
-    if target <= now:
-        target = target + timedelta(days=1)
+    target = now.replace(hour=hour, minute=0, second=0, microsecond=0)
+    if now >= target:
+        target += timedelta(days=1)
     return (target - now).total_seconds()
 
 @tasks.loop(hours=24)
-async def daily_job():
-    # runs every 24h but we'll start it at the right time on_ready
+async def auto_daily():
     if not CHANNEL_ID:
-        print("⚠️ CHANNEL_ID not set — daily_job will skip sending.")
+        return
+    
+    chan = bot.get_channel(CHANNEL_ID)
+    if not chan:
+        print("⚠️ Brak kanału!")
         return
 
-    channel = bot.get_channel(CHANNEL_ID)
-    if not channel:
-        print("⚠️ Nie znaleziono kanału (daily_job).")
-        return
-
-    print("⏳ daily_job: robimy screenshoty...")
     files = await fetch_and_screenshot_tiles()
     if not files:
-        try:
-            await channel.send("⚠️ Autosprawdzenie — nie udało się pobrać kafelków.")
-        except:
-            pass
+        await chan.send("❌ Automatyczne pobranie nieudane")
         return
 
-    # usuń stare wiadomości
-    await delete_old_bot_messages(channel)
+    await delete_old_bot_messages(chan)
 
-    # wyślij kafelki, każdy osobno
-    for path in files:
-        try:
-            await channel.send(file=discord.File(path))
-        except Exception as e:
-            print("Błąd wysyłania pliku w daily_job:", e)
+    for f in files:
+        await chan.send(file=discord.File(f))
+        os.remove(f)
 
-    # send a small footer message with timestamp
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    try:
-        await channel.send(f"🎯 Daily Codes — aktualizacja: {now}")
-    except:
-        pass
+    now = datetime.utcnow()
+    await chan.send(f"🎯 Daily codes update: {now:%Y-%m-%d %H:%M UTC}")
 
-    # cleanup
-    for p in files:
-        try:
-            os.remove(p)
-        except:
-            pass
-
-# ---- on_ready: schedule the first run at next 01:00 UTC ----
-@bot.event
-async def on_ready():
-    print(f"✅ Bot zalogowany jako: {bot.user}")
-    # start daily_job at the exact 01:00 UTC
-    wait = await seconds_until_next_utc_run(1, 0)
-    print(f"⏳ Poczekam {int(wait)}s do pierwszego uruchomienia daily_job o 01:00 UTC")
-    async def starter():
-        await asyncio.sleep(wait)
-        await daily_job()
-        daily_job.start()
-    bot.loop.create_task(starter())
-
-# ---- Keep-alive Flask app so Railway doesn't stop container ----
-app = Flask("df_bot_keepalive")
+# ---- Keep Alive Server ----
+app = Flask(__name__)
 @app.route("/")
 def home():
-    return "DeltaForceDailyCodes bot is running."
+    return "✅ Bot działa!"
 
 def run_web():
     port = int(os.environ.get("PORT", 8080))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=port, threaded=True)
 
-# start webserver in thread
-Thread(target=run_web, daemon=True).start()
+def start_web():
+    Thread(target=run_web, daemon=True).start()
 
-# 🔄 Anti-idle ping co 30 sekund
 async def keepalive():
     await bot.wait_until_ready()
     while not bot.is_closed():
         try:
-            async with aiohttp.ClientSession() as session:
-                await session.get("https://deltaforce-discord-bot-production.up.railway.app")  # <- zmienimy za chwilę
+            async with aiohttp.ClientSession() as s:
+                await s.get(PUBLIC_URL)
         except:
             pass
         await asyncio.sleep(30)
 
+# ---- On Ready ----
 @bot.event
-async def on_disconnect():
-    print("⚠️ BOT DISCONNECTED — trying to reconnect...")
+async def on_ready():
+    print(f"✅ Zalogowano jako {bot.user}")
+    bot.loop.create_task(keepalive())
+    wait = await seconds_until(1)
+    print(f"⏳ Pierwszy auto check za {int(wait)} sekund")
+    await asyncio.sleep(wait)
+    auto_daily.start()
+    await auto_daily()
 
-@bot.event
-async def on_resume():
-    print("✅ Reconnected successfully!")
-    
-bot.loop.create_task(keepalive())
-
-# ---- Run the bot ----
-if __name__ == "__main__":
-    bot.run(DISCORD_TOKEN)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+# ---- Startup ----
+start_web()
+bot.run(DISCORD_TOKEN)
