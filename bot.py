@@ -6,6 +6,18 @@ import re
 from bs4 import BeautifulSoup
 from discord.ext import commands, tasks
 from datetime import datetime
+from flask import Flask
+from threading import Thread
+
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "Bot działa ✅"
+
+def run_web():
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
+
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 CHANNEL_ID = int(os.getenv("CHANNEL_ID", "0"))
@@ -153,8 +165,10 @@ async def on_ready():
     print(f"✅ Bot zalogowany jako: {bot.user}")
     auto_check.start()
 
-
+# Włączamy webserver, aby Railway nie ubijał kontenera
+Thread(target=run_web).start()
 bot.run(TOKEN)
+
 
 
 
