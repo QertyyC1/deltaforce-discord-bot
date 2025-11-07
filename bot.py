@@ -43,62 +43,45 @@ def save_last_codes(codes):
         print("⚠️ Nie udało się zapisać last_codes:", e)
 
 # ---- Funkcja scrapująca (Playwright async) ----
-async def fetch_daily_codes():
-    """
-    Otwiera stronę deltaforcetools.gg z headless chromium, czeka krótką chwilę
-    aż JS wyrenderuje zawartość, pobiera HTML i parsuje 5 kodów.
-    Zwraca listę stringów (kodów) lub None.
-    """
+def fetch_daily_codes():
     url = "https://deltaforcetools.gg"
-    try:
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True, args=["--no-sandbox"])
-            page = await browser.new_page()
-            await page.goto(url, timeout=25000)
-            # poczekaj na coś co zwykle pojawia się po JS — możemy poczekać 3s
-            await page.wait_for_timeout(3000)
-            html = await page.content()
-            await browser.close()
-    except Exception as e:
-        print("❌ Playwright error:", e)
-        return None
 
     try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
+            page = browser.new_page()
+
+            page.goto(url, timeout=30000)
+            # ✅ Czekamy aż pokaże się ikonka prezentu (gift)
+            page.wait_for_selector("svg[data-icon='gift']", timeout=15000)
+
+            html = page.content()
+            browser.close()
+
         soup = BeautifulSoup(html, "html.parser")
-        # Najbardziej odporna metoda: znajdź wszystkie p-teksty i weź pierwsze sekwencje cyfr
-        texts = [p.get_text(strip=True) for p in soup.find_all("p")]
+
         codes = []
-        for t in texts:
-            # szukamy krótkiego ciągu cyfr (2+ cyfr). Dostosuj jeśli kody mają litery.
-            m = re.search(r"\b\d{2,}\b", t)
-            if m:
-                codes.append(m.group(0))
+        gift_cards = soup.select("div.flex-col span.font-bold")
+
+        for span in gift_cards:
+            text = span.get_text(strip=True)
+            if text.isdigit():
+                codes.append(text)
+
             if len(codes) >= 5:
                 break
 
-        if len(codes) < 1:
-            # dodatkowy fallback: szukaj w całym HTML
-            fallback = re.findall(r"\b\d{2,}\b", html)
-            if fallback:
-                # spróbuj wybrać unikalne wartości
-                uniq = []
-                for x in fallback:
-                    if x not in uniq:
-                        uniq.append(x)
-                    if len(uniq) >= 5:
-                        break
-                codes = uniq
+        if len(codes) >= 5:
+            print("✅ Kody znalezione:", codes)
+            return codes[:5]
 
-        if not codes:
-            print("⚠️ Nie znaleziono kodów w HTML.")
-            return None
-
-        print("✅ fetch_daily_codes -> znalezione:", codes[:5])
-        return codes[:5]
+        print("⚠️ Znaleziono za mało kodów:", codes)
+        return None
 
     except Exception as e:
-        print("❌ Błąd parsowania HTML:", e)
+        print("❌ Błąd Playwright:", e)
         return None
+
 
 # ---- Wysyłka kodów na Discord (embed) ----
 async def send_codes_to_channel(codes, reason="Ręczne"):
@@ -183,6 +166,7 @@ async def on_ready():
 # ---- Uruchomienie bota ----
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
+
 
 
 
