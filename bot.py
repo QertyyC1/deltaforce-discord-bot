@@ -1,15 +1,25 @@
 import os
-import discord
+import json
+import re
 import asyncio
+from datetime import datetime, time, timedelta
+from zoneinfo import ZoneInfo
+
+import discord
 from discord.ext import commands, tasks
-from datetime import datetime
-from playwright.sync_api import sync_playwright
+from playwright.async_api import async_playwright
 from bs4 import BeautifulSoup
 
-TOKEN = os.getenv("DISCORD_TOKEN")
+# ---- Konfiguracja (ENV) ----
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 CHANNEL_ID = int(os.getenv("CHANNEL_ID", "0"))
+PERSIST_FILE = "last_codes.json"  # przechowuje ostatnie kody, żeby nie spamować
 
-# ✅ Włączone intents — to jest ta część, którą musisz mieć 👇
+if not DISCORD_TOKEN:
+    print("❌ Brak DISCORD_TOKEN w env. Ustaw zmienną środowiskową i restartuj.")
+    # nie exitujemy — discord.py i tak zwróci błąd przy run
+
+# ---- Intents ----
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
@@ -17,73 +27,162 @@ intents.presences = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-
-# ✅ Playwright Scraper
-def fetch_daily_codes():
-    url = "https://deltaforcetools.gg"
-
+# ---- Pomoc: zapisz/odczytaj ostatnie kody (persistencja) ----
+def load_last_codes():
     try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
-            page.goto(url, timeout=25000)
-            page.wait_for_timeout(3500)  # czekanie na JS
+        with open(PERSIST_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return []
 
-            html = page.content()
-            browser.close()
-
-        soup = BeautifulSoup(html, "html.parser")
-        p_tags = soup.find_all("p")
-
-        codes = [p.get_text(strip=True) for p in p_tags if p.get_text(strip=True).isdigit()]
-        return codes[:5] if len(codes) >= 5 else None
-
+def save_last_codes(codes):
+    try:
+        with open(PERSIST_FILE, "w", encoding="utf-8") as f:
+            json.dump(codes, f)
     except Exception as e:
-        print("❌ Błąd Playwright:", e)
+        print("⚠️ Nie udało się zapisać last_codes:", e)
+
+# ---- Funkcja scrapująca (Playwright async) ----
+async def fetch_daily_codes():
+    """
+    Otwiera stronę deltaforcetools.gg z headless chromium, czeka krótką chwilę
+    aż JS wyrenderuje zawartość, pobiera HTML i parsuje 5 kodów.
+    Zwraca listę stringów (kodów) lub None.
+    """
+    url = "https://deltaforcetools.gg"
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True, args=["--no-sandbox"])
+            page = await browser.new_page()
+            await page.goto(url, timeout=25000)
+            # poczekaj na coś co zwykle pojawia się po JS — możemy poczekać 3s
+            await page.wait_for_timeout(3000)
+            html = await page.content()
+            await browser.close()
+    except Exception as e:
+        print("❌ Playwright error:", e)
         return None
 
+    try:
+        soup = BeautifulSoup(html, "html.parser")
+        # Najbardziej odporna metoda: znajdź wszystkie p-teksty i weź pierwsze sekwencje cyfr
+        texts = [p.get_text(strip=True) for p in soup.find_all("p")]
+        codes = []
+        for t in texts:
+            # szukamy krótkiego ciągu cyfr (2+ cyfr). Dostosuj jeśli kody mają litery.
+            m = re.search(r"\b\d{2,}\b", t)
+            if m:
+                codes.append(m.group(0))
+            if len(codes) >= 5:
+                break
 
-# ✅ Komenda "!sprawdz"
-@bot.command()
-async def sprawdz(ctx):
-    await ctx.send("🔄 Pobieram Daily Codes...")
-    codes = fetch_daily_codes()
+        if len(codes) < 1:
+            # dodatkowy fallback: szukaj w całym HTML
+            fallback = re.findall(r"\b\d{2,}\b", html)
+            if fallback:
+                # spróbuj wybrać unikalne wartości
+                uniq = []
+                for x in fallback:
+                    if x not in uniq:
+                        uniq.append(x)
+                    if len(uniq) >= 5:
+                        break
+                codes = uniq
 
-    if codes:
-        msg = "\n".join(f"✅ Kod #{i+1}: `{code}`" for i, code in enumerate(codes))
-        await ctx.send(msg)
-    else:
-        await ctx.send("❌ Nie udało się pobrać kodów 😕")
+        if not codes:
+            print("⚠️ Nie znaleziono kodów w HTML.")
+            return None
 
+        print("✅ fetch_daily_codes -> znalezione:", codes[:5])
+        return codes[:5]
 
-# ✅ Auto-Check co godzinę
-@tasks.loop(hours=1)
-async def auto_check():
+    except Exception as e:
+        print("❌ Błąd parsowania HTML:", e)
+        return None
+
+# ---- Wysyłka kodów na Discord (embed) ----
+async def send_codes_to_channel(codes, reason="Ręczne"):
     if not CHANNEL_ID:
-        return
-
+        print("⚠️ CHANNEL_ID nie ustawione.")
+        return False
     channel = bot.get_channel(CHANNEL_ID)
     if not channel:
+        print("⚠️ Nie znaleziono kanału o ID:", CHANNEL_ID)
+        return False
+
+    embed = discord.Embed(title="Daily Codes — DeltaForceTools", color=0x1abc9c)
+    embed.set_footer(text=f"{reason} • {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
+    for i, c in enumerate(codes, start=1):
+        embed.add_field(name=f"Kod #{i}", value=f"`{c}`", inline=False)
+
+    await channel.send(embed=embed)
+    return True
+
+# ---- Komenda ręczna !sprawdz ----
+@bot.command(name="sprawdz")
+async def cmd_sprawdz(ctx):
+    await ctx.send("🔄 Pobieram Daily Codes...")
+    codes = await fetch_daily_codes()
+    if not codes:
+        await ctx.send("❌ Nie udało się pobrać kodów 😕")
         return
 
-    codes = fetch_daily_codes()
-    now = datetime.utcnow().strftime("%H:%M UTC")
+    # pokaż i zapis
+    await send_codes_to_channel(codes, reason="Ręczne !sprawdz")
+    save_last_codes(codes)
 
-    if codes:
-        msg = f"⏰ Auto-check {now}\n" + "\n".join(f"✅ Kod #{i+1}: `{code}`" for i, code in enumerate(codes))
-        await channel.send(msg)
+# ---- Zadanie: sprawdzaj raz dziennie o 01:00 Europe/Warsaw ----
+async def wait_until_next_run(hour=1, minute=0, tz_name="Europe/Warsaw"):
+    tz = ZoneInfo(tz_name)
+    while True:
+        now = datetime.now(tz)
+        next_run = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if next_run <= now:
+            next_run = next_run + timedelta(days=1)
+        wait_seconds = (next_run - now).total_seconds()
+        return wait_seconds
+
+@tasks.loop(hours=24)
+async def daily_job():
+    """Ta pętla uruchamia się codziennie — jednak aby wywołać ją dokładnie o 01:00 CET,
+    będziemy ręcznie czekać podczas startu."""
+    # w pętli tasks.loop(hours=24) wywoływana jest co 24h, ale wywołanie start() zaplanujemy na exact time.
+    codes = await fetch_daily_codes()
+    if not codes:
+        # wysyłamy informację, że nie pobraliśmy
+        if CHANNEL_ID:
+            ch = bot.get_channel(CHANNEL_ID)
+            if ch:
+                await ch.send("⚠️ Autosprawdzenie — nie udało się pobrać kodów.")
+        return
+
+    # porównaj z ostatnimi zapisanymi, wysyłaj tylko jeśli inne
+    last = load_last_codes()
+    if codes != last:
+        await send_codes_to_channel(codes, reason="Autoupdate 01:00")
+        save_last_codes(codes)
     else:
-        await channel.send(f"⚠️ Auto-check {now} — błąd pobierania!")
-
+        print("ℹ️ Kody takie same jak poprzednio — nie wysyłam.")
 
 @bot.event
 async def on_ready():
     print(f"✅ Bot zalogowany jako: {bot.user}")
-    auto_check.start()
+    # start pętli codziennej dokładnie o 01:00 Europe/Warsaw
+    # oblicz ile sekund do next run
+    wait_seconds = await wait_until_next_run(1, 0, "Europe/Warsaw")
+    print(f"⏳ Poczekam {int(wait_seconds)}s do pierwszego uruchomienia o 01:00 Europe/Warsaw")
+    # odpalenie z opóźnieniem (nie blokuj event loop)
+    async def starter():
+        await asyncio.sleep(wait_seconds)
+        # pierwszy raz
+        await daily_job()
+        # teraz uruchom loop, który robi job co 24h (tasks.loop hours=24)
+        daily_job.start()
+    bot.loop.create_task(starter())
 
-
-bot.run(TOKEN)
-
+# ---- Uruchomienie bota ----
+if __name__ == "__main__":
+    bot.run(DISCORD_TOKEN)
 
 
 
