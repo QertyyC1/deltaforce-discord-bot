@@ -1,6 +1,4 @@
 discord.py==2.4.0
-playwright==1.35.0
-beautifulsoup4
+playwright==1.49.0
 flask
 aiohttp
-requests
