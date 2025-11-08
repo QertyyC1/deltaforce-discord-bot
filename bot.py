@@ -39,138 +39,53 @@ async def delete_old_bot_messages(channel, limit=50):
 
 # ---------------- Playwright scraper + screenshots ----------------
 # returns list of temp file paths (screenshots) or None
-async def fetch_tiles(url="https://deltaforcetools.gg"):
-    """
-    Otwiera stronę, scrolluje, próbuje znaleźć kafelki i zrobić screenshot każdego z nich.
-    Jeśli nie znajdzie — robi full-page screenshot i zapisuje debug.html.
-    Zwraca listę ścieżek do plików PNG.
-    """
-    out_files = []
+async def fetch_and_screenshot_tiles(url="https://deltaforcetools.gg"):
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True, args=[
-                "--disable-blink-features=AutomationControlled",
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
                 "--disable-dev-shm-usage",
                 "--disable-gpu",
             ])
-            context = await browser.new_context(
-                user_agent=(
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/120.0.0.0 Safari/537.36"
-                ),
-                viewport={"width": 1280, "height": 2000}
+            page = await browser.new_page(
+                viewport={"width": 1280, "height": 2500},
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
             )
-            page = await context.new_page()
 
-            # goto + wait
             await page.goto(url, wait_until="networkidle", timeout=60000)
+            await page.wait_for_timeout(5000)
 
-            # dajemy JS czas i scrollujemy do dołu powoli (lazy load)
-            await page.wait_for_timeout(2000)
-            for _ in range(8):
-                await page.evaluate("window.scrollBy(0, Math.floor(document.body.scrollHeight/8))")
-                await page.wait_for_timeout(800)
+            # Scrollujemy, aby załadowała się sekcja z kodami
+            for _ in range(10):
+                await page.mouse.wheel(0, 800)
+                await page.wait_for_timeout(600)
 
-            # dodatkowy wait
-            await page.wait_for_timeout(2000)
+            # Szukamy sekcji z "Daily Codes"
+            section = await page.query_selector("section:has-text('Daily Codes')")
 
-            # debug: zapisz pierwszy fragment HTML (4000 chars)
-            try:
-                html = await page.content()
-                print("📄 DEBUG HTML PREVIEW:")
-                print(html[:4000])
-                print("----- END PREVIEW -----")
-            except Exception as e_html:
-                print("⚠️ Nie udało się pobrać HTML preview:", e_html)
-                html = ""
+            # Jeśli nie znajdzie, spróbuj alternatywne selektory
+            if not section:
+                section = await page.query_selector("div:has-text('Daily Codes')")
+            if not section:
+                section = await page.query_selector("main")
 
-            # lista selektorów próbnych (spróbujemy tego co zwraca najwięcej elementów)
-            selectors = [
-                "div.col-lg-3.col-sm-6.mb-4",
-                ".col-12.col-md-6.col-lg-4.col-xl-3",
-                "article",
-                ".card",
-                ".tile",
-                "div[data-role='tile']",
-                ".daily-card",
-                "span.greenText",
-                "div[class*='tile']",
-                ".MuiPaper-root",  # material-ui
-                ".chakra-card",    # inne frameworki
-            ]
+            path = tempfile.NamedTemporaryFile(suffix=".png", delete=False).name
 
-            best = []
-            for sel in selectors:
-                try:
-                    found = await page.query_selector_all(sel)
-                    if found and len(found) > len(best):
-                        best = found
-                except Exception:
-                    continue
-
-            elements = best
-
-            # heurystyka: jeżeli nic nie znaleziono, wyszukaj elementy zawierające liczbę (3-7 cyfr)
-            if not elements:
-                cand = await page.query_selector_all("p, span, div")
-                filtered = []
-                for el in cand:
-                    try:
-                        txt = (await el.inner_text()).strip()
-                        if re.search(r"\b\d{3,7}\b", txt):
-                            filtered.append(el)
-                    except Exception:
-                        continue
-                elements = filtered
-
-            # jeśli nadal pusto -> fallback full page screenshot i zapis HTML do pliku
-            if not elements:
-                print("⚠️ Nie znaleziono kafelków — robię full-page screenshot jako fallback")
-                tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png").name
-                try:
-                    await page.screenshot(path=tmp, full_page=True)
-                    out_files.append(tmp)
-                except Exception as e_s:
-                    print("❌ Błąd tworzenia full-page screenshot:", e_s)
-                # zapisz debug HTML do pliku
-                try:
-                    with open("debug_deltaforce.html", "w", encoding="utf-8") as f:
-                        f.write(html if html else await page.content())
-                    print("📄 DEBUG: zapisano debug_deltaforce.html")
-                except Exception as e_f:
-                    print("⚠️ Nie udało się zapisać debug_deltaforce.html:", e_f)
-                await browser.close()
-                return out_files
-
-            # inaczej: screenshotujemy maks. 5 elementów (u Ciebie jest 5)
-            take = min(len(elements), 5)
-            for i in range(take):
-                el = elements[i]
-                tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png").name
-                try:
-                    await el.screenshot(path=tmp)
-                except Exception:
-                    # fallback: spróbuj box clip
-                    try:
-                        box = await el.bounding_box()
-                        if box:
-                            tmp2 = tempfile.NamedTemporaryFile(delete=False, suffix=".png").name
-                            await page.screenshot(path=tmp2, clip={"x": box["x"], "y": box["y"], "width": box["width"], "height": box["height"]})
-                            tmp = tmp2
-                    except Exception as e_clip:
-                        print("⚠️ Błąd przy clip screenshot:", e_clip)
-                out_files.append(tmp)
+            if section:
+                print("✅ Znaleziono sekcję 'Daily Codes' – robię screenshot...")
+                await section.screenshot(path=path)
+            else:
+                print("⚠️ Nie znaleziono sekcji — robię pełny screenshot strony.")
+                await page.screenshot(path=path, full_page=True)
 
             await browser.close()
-            print(f"✅ Utworzono {len(out_files)} screenshotów kafelków")
-            return out_files
+            return [path]
 
     except Exception as e:
-        print("❌ Playwright error (fetch_tiles):", e)
+        print("❌ Playwright FATAL:", e)
         return None
+
 
 # ---------------- Commands ----------------
 @bot.command(name="sprawdz")
@@ -307,3 +222,4 @@ async def setup_hook():
 # ---------------- Run bot ----------------
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
+
