@@ -93,7 +93,7 @@ async def cmd_sprawdz(ctx):
     from playwright.async_api import async_playwright
     import discord
 
-    await ctx.send("🔄 Pobieram sekcję **Daily Codes** ...")
+    await ctx.send("🔄 Pobieram sekcję **Daily Codes** ze strony deltaforcetools.gg...")
 
     try:
         async with async_playwright() as p:
@@ -101,7 +101,7 @@ async def cmd_sprawdz(ctx):
             page = await browser.new_page(viewport={"width": 1920, "height": 1080})
 
             await page.goto("https://deltaforcetools.gg", wait_until="networkidle")
-            await asyncio.sleep(8)  # czekaj na załadowanie kafelków
+            await asyncio.sleep(8)  # czekaj na pełne załadowanie kafelków
 
             # znajdź pozycję nagłówka "Daily Codes"
             header = await page.query_selector("text=Daily Codes")
@@ -129,10 +129,17 @@ async def cmd_sprawdz(ctx):
                     "x": 0,
                     "y": box["y"] + 80,  # przesunięcie w dół pod napis "Daily Codes"
                     "width": 1920,
-                    "height": 600,       # wysokość sekcji z kafelkami
+                    "height": 650,       # wysokość sekcji z kafelkami
                 },
+            )
 
+            await browser.close()
+            await ctx.send("✅ Oto aktualne **Daily Codes** 👇", file=discord.File(screenshot_path))
 
+    except Exception as e:
+        await ctx.send(f"❌ Błąd: `{e}`")
+        import traceback
+        traceback.print
 
 # ---------------- Daily scheduler ----------------
 async def seconds_until_next_utc_run(hour_utc=1, minute_utc=0):
@@ -231,6 +238,7 @@ async def setup_hook():
 # ---------------- Run bot ----------------
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
+
 
 
 
