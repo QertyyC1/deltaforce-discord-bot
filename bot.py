@@ -92,7 +92,7 @@ async def cmd_sprawdz(ctx):
     import asyncio
     from playwright.async_api import async_playwright
 
-    await ctx.send("🔄 Pobieram sekcję **Daily Codes** ze strony deltaforcetools.gg...")
+    await ctx.send("🔄 Pobieram sekcję **Daily Codes** ...")
 
     try:
         async with async_playwright() as p:
@@ -240,6 +240,7 @@ async def setup_hook():
 # ---------------- Run bot ----------------
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
+
 
 
 
