@@ -90,40 +90,37 @@ async def fetch_and_screenshot_tiles(url="https://deltaforcetools.gg"):
 # ---------------- Commands ----------------
 @bot.command(name="sprawdz")
 async def cmd_sprawdz(ctx):
-    info_msg = await ctx.send("🔄 Generuję zrzuty kafelków (może potrwać do ~30s)...")
-    files = await fetch_tiles()
+    info_msg = await ctx.send("🔄 Generuję zrzut sekcji **Daily Codes** (może potrwać kilka sekund)...")
+    
+    files = await fetch_and_screenshot_tiles()
     if not files:
-        await info_msg.edit(content="❌ Nie udało się pobrać kafelków / zrzutów 😕 — sprawdź logi (DEBUG HTML PREVIEW).")
-        return
-
-    # fallback full page (1 file) -> wyślij i poproś o log
-    if len(files) == 1:
-        await delete_old_bot_messages(ctx.channel)
         try:
-            await ctx.send("⚠️ Wysyłam fallbackowy screenshot (to, co widzi bot). Jeśli nie widać kodów, wklej mi LOGI (DEBUG HTML PREVIEW).")
-            await ctx.send(file=discord.File(files[0]))
-        except Exception as e:
-            print("Błąd wysyłania fallback screenshot:", e)
-        try:
-            os.remove(files[0])
+            await info_msg.edit(content="❌ Nie udało się pobrać sekcji / zrzutu 😕 — sprawdź logi.")
         except:
             pass
-        await info_msg.delete()
         return
 
-    # normalny przypadek: wiele kafelków
+    # usuń stare wiadomości bota
     await delete_old_bot_messages(ctx.channel)
-    for path in files:
-        try:
-            await ctx.send(file=discord.File(path))
-        except Exception as e:
-            print("Błąd wysyłania obrazka:", e)
-        try:
-            os.remove(path)
-        except:
-            pass
-    await info_msg.delete()
-    await ctx.send(f"✅ Wysłano {len(files)} kafelków.")
+
+    # usuń komunikat informacyjny bez błędu jeśli już nie istnieje
+    try:
+        await info_msg.delete()
+    except discord.NotFound:
+        pass
+
+    # wyślij pojedynczy zrzut ekranu
+    try:
+        await ctx.send(file=discord.File(files[0]))
+    except Exception as e:
+        print("Błąd wysyłania pliku:", e)
+
+    # usuń plik tymczasowy
+    try:
+        os.remove(files[0])
+    except:
+        pass
+
 
 # ---------------- Daily scheduler ----------------
 async def seconds_until_next_utc_run(hour_utc=1, minute_utc=0):
@@ -222,4 +219,5 @@ async def setup_hook():
 # ---------------- Run bot ----------------
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
+
 
