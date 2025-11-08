@@ -3,13 +3,11 @@ import os
 import asyncio
 import tempfile
 import aiohttp
+import discord
 from datetime import datetime, timedelta, timezone
 from threading import Thread
-
-import discord
-from discord.ext import commands, tasks
-
 from playwright.async_api import async_playwright
+from discord.ext import commands, tasks
 from flask import Flask
 
 # ---------------- Config ----------------
@@ -40,125 +38,73 @@ async def delete_old_bot_messages(channel, limit=50):
 
 # ---------------- Playwright scraper + screenshots ----------------
 # returns list of temp file paths or None
-async def fetch_and_screenshot_tiles(url="https://deltaforcetools.gg"):
-    """
-    Zwraca listę plików (screenshoty kafelków). Jako ostateczny fallback zawsze
-    tworzy full-page screenshot i zapisuje HTML fragment do logów.
-    """
-    out_files = []
-    try:
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True, args=[
+
+async def fetch_tiles():
+    url = "https://deltaforcetools.gg"
+    print(f"[DEBUG] Otwieram stronę: {url}")
+
+    async with async_playwright() as p:
+        # Uruchamiamy Chromium z odpowiednimi argumentami
+        browser = await p.chromium.launch(
+            headless=True,  # Możesz dać False, jeśli chcesz zobaczyć co się dzieje
+            args=[
+                "--disable-blink-features=AutomationControlled",
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
                 "--disable-dev-shm-usage",
-                "--disable-gpu",
-            ])
-            page = await browser.new_page(viewport={"width": 1280, "height": 2000})
-            await page.set_extra_http_headers({"Accept-Language": "en,en-US;q=0.9,pl;q=0.8"})
-            # dłuższy timeout i networkidle
-            await page.goto(url, wait_until="networkidle", timeout=60000)
-
-            # Dajemy JS więcej czasu
-            await page.wait_for_timeout(8000)
-
-            # Scroll powolny — wymusza lazy-load
-            for _ in range(8):
-                await page.mouse.wheel(0, 800)
-                await page.wait_for_timeout(600)
-
-            # Pobierz HTML i zaloguj pierwsze 4000 znaków (debug)
-            try:
-                html = await page.content()
-                print("📄 DEBUG HTML PREVIEW (pierwsze 4000 znaków):")
-                print(html[:4000])
-                print("----- KONIEC PREVIEW -----")
-            except Exception as e_html:
-                print("⚠️ Nie udało się pobrać HTML preview:", e_html)
-                html = ""
-
-            # Próbne selektory (szukamy elementów, które wyglądają na kafelki)
-            selectors = [
-                "div.col-lg-3.col-sm-6.mb-4",
-                ".col-12.col-md-6.col-lg-4.col-xl-3",
-                "article",
-                ".card",
-                ".tile",
-                "div[data-role='tile']",
-                ".daily-card",
-                "span.greenText",
-                "div[class*='tile']",
+                "--disable-gpu"
             ]
+        )
+        context = await browser.new_context(
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            )
+        )
 
-            best = []
-            for sel in selectors:
-                try:
-                    found = await page.query_selector_all(sel)
-                    if found and len(found) > len(best):
-                        best = found
-                except Exception:
-                    continue
+        page = await context.new_page()
 
-            # jeśli niczego nie znaleziono, użyj heurystyki: elementy zawierające 3-7 cyfr
-            elements = best
-            if not elements:
-                cand = await page.query_selector_all("p, span, div")
-                filtered = []
-                import re
-                for el in cand:
-                    try:
-                        txt = (await el.inner_text()).strip()
-                        if re.search(r"\b\d{3,7}\b", txt):
-                            filtered.append(el)
-                    except Exception:
-                        continue
-                elements = filtered
+        try:
+            # Wejście na stronę
+            await page.goto(url, timeout=60000)
+            await page.wait_for_load_state("networkidle")
+            print("[DEBUG] Strona załadowana")
 
-            # jeśli dalej pusto — fallback: full page screenshot + zwróć tylko ten plik
-            if not elements:
-                print("⚠️ Nie znaleziono kafelków — robię full-page screenshot fallback")
-                tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png").name
-                try:
-                    await page.screenshot(path=tmp, full_page=True)
-                    out_files.append(tmp)
-                    # zapisz też HTML do pliku debugowego, żeby łatwiej pobrać
-                    try:
-                        with open("debug_deltaforce.html", "w", encoding="utf-8") as f:
-                            f.write(html if html else await page.content())
-                        print("📄 DEBUG: Zapisano debug_deltaforce.html")
-                    except Exception as e:
-                        print("⚠️ Nie udało się zapisać debug_deltaforce.html:", e)
-                except Exception as e_s:
-                    print("❌ Błąd robiąc full-page screenshot:", e_s)
-                await browser.close()
-                return out_files
+            # Scrollowanie do dołu kilka razy (lazy-load)
+            for i in range(5):
+                await page.evaluate("window.scrollBy(0, document.body.scrollHeight)")
+                await asyncio.sleep(2)
 
-            # W przeciwnym wypadku screenshoty elementów (max 5)
-            take = min(len(elements), 5)
-            for i in range(take):
-                el = elements[i]
-                tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png").name
-                try:
-                    await el.screenshot(path=tmp)
-                except Exception:
-                    # fallback: użyj bounding box
-                    try:
-                        box = await el.bounding_box()
-                        if box:
-                            tmp2 = tempfile.NamedTemporaryFile(delete=False, suffix=".png").name
-                            await page.screenshot(path=tmp2, clip={"x": box["x"], "y": box["y"], "width": box["width"], "height": box["height"]})
-                            tmp = tmp2
-                    except Exception as e_clip:
-                        print("⚠️ Nie udało się screenshotować elementu:", e_clip)
-                out_files.append(tmp)
+            # Czekamy, aż kafelki się pojawią (zmień selektor jeśli inny)
+            await page.wait_for_selector(".MuiPaper-root", timeout=10000)
+            print("[DEBUG] Kafelki załadowane ✅")
+
+            # Zrzut ekranu do debugowania
+            await page.screenshot(path="screenshot.png", full_page=True)
+
+            # Zapisujemy HTML (dla analizy błędów)
+            html = await page.content()
+            with open("debug.html", "w", encoding="utf-8") as f:
+                f.write(html)
+
+            # Pobieramy dane z kafelków
+            tiles = await page.query_selector_all(".MuiPaper-root")
+            results = []
+
+            for tile in tiles:
+                text = await tile.inner_text()
+                results.append(text.strip())
 
             await browser.close()
-            print(f"✅ Utworzono {len(out_files)} screenshotów kafelków")
-            return out_files
+            print(f"[DEBUG] Znaleziono {len(results)} kafelków")
+            return results
 
-    except Exception as e:
-        print("❌ Playwright error (fetch_and_screenshot_tiles):", e)
-        return None
+        except Exception as e:
+            print(f"[ERROR] Nie udało się pobrać kafelków: {e}")
+            await page.screenshot(path="error.png", full_page=True)
+            await browser.close()
+            return None
 
 # ---------------- Commands ----------------
 @bot.command(name="sprawdz")
@@ -294,4 +240,5 @@ async def setup_hook():
 # ---------------- Run bot ----------------
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
+
 
