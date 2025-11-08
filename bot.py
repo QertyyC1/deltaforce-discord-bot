@@ -89,36 +89,51 @@ async def fetch_and_screenshot_tiles():
 # ---------------- Commands ----------------
 @bot.command(name="sprawdz")
 async def cmd_sprawdz(ctx):
-    info_msg = await ctx.send("🔄 Generuję zrzut sekcji **Daily Codes** (może potrwać kilka sekund)...")
-    
-    files = await fetch_and_screenshot_tiles()
-    if not files:
-        try:
-            await info_msg.edit(content="❌ Nie udało się pobrać sekcji / zrzutu 😕 — sprawdź logi.")
-        except:
-            pass
-        return
+    import asyncio
+    from playwright.async_api import async_playwright
 
-    # usuń stare wiadomości bota
-    await delete_old_bot_messages(ctx.channel)
+    await ctx.send("🔄 Pobieram sekcję **Daily Codes** ze strony deltaforcetools.gg...")
 
-    # usuń komunikat informacyjny bez błędu jeśli już nie istnieje
     try:
-        await info_msg.delete()
-    except discord.NotFound:
-        pass
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            page = await browser.new_page(viewport={"width": 1600, "height": 1200})
 
-    # wyślij pojedynczy zrzut ekranu
-    try:
-        await ctx.send(file=discord.File(files[0]))
+            await page.goto("https://deltaforcetools.gg", wait_until="networkidle")
+            await asyncio.sleep(5)
+
+            # przewiń w dół
+            await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2)")
+            await asyncio.sleep(2)
+
+            # znajdź sekcję
+            section = await page.query_selector("text=Daily Codes")
+            if not section:
+                await ctx.send("❌ Nie znaleziono sekcji **Daily Codes** na stronie.")
+                await browser.close()
+                return
+
+            # znajdź kontener sekcji
+            container = await section.evaluate_handle("node => node.closest('section') || node.parentElement")
+            if not container:
+                await ctx.send("❌ Nie udało się odnaleźć kontenera sekcji.")
+                await browser.close()
+                return
+
+            # przewiń i zrób screenshot
+            await container.scroll_into_view_if_needed()
+            await asyncio.sleep(1)
+            screenshot_path = "daily_codes.png"
+            await container.screenshot(path=screenshot_path)
+            await browser.close()
+
+            await ctx.send("✅ Udało się! Oto sekcja **Daily Codes** 👇", file=discord.File(screenshot_path))
+
     except Exception as e:
-        print("Błąd wysyłania pliku:", e)
+        await ctx.send(f"❌ Wystąpił błąd: `{e}`")
+        import traceback
+        traceback.print_exc()
 
-    # usuń plik tymczasowy
-    try:
-        os.remove(files[0])
-    except:
-        pass
 
 
 # ---------------- Daily scheduler ----------------
@@ -218,6 +233,7 @@ async def setup_hook():
 # ---------------- Run bot ----------------
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
+
 
 
 
