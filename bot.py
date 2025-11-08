@@ -93,7 +93,7 @@ async def cmd_sprawdz(ctx):
     from playwright.async_api import async_playwright
     import discord
 
-    await ctx.send("🔄 Pobieram sekcję **Daily Codes** ze strony deltaforcetools.gg...")
+    await ctx.send("🔄 Pobieram sekcję **Daily Codes** ...")
 
     try:
         async with async_playwright() as p:
@@ -101,40 +101,45 @@ async def cmd_sprawdz(ctx):
             page = await browser.new_page(viewport={"width": 1920, "height": 1080})
 
             await page.goto("https://deltaforcetools.gg", wait_until="networkidle")
-            await asyncio.sleep(5)
+            await asyncio.sleep(8)  # daj czas na załadowanie kafelków
 
-            # przewiń w dół do sekcji Daily Codes
-            await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2)")
-            await asyncio.sleep(2)
+            # przewiń trochę w dół, aby sekcja się pojawiła
+            await page.evaluate("window.scrollBy(0, window.innerHeight / 1.5)")
+            await asyncio.sleep(3)
 
-            # znajdź jeden z kafelków (np. zawierający nazwę mapy)
-            tile = await page.query_selector("text=Dam, text=Layali Grove, text=Brakkesh, text=Space City, text=Tide Prison")
-            if not tile:
-                await ctx.send("❌ Nie znaleziono żadnych kafelków sekcji Daily Codes.")
+            # znajdź element z nagłówkiem "Daily Codes"
+            header = await page.query_selector("text=Daily Codes")
+            if not header:
+                await ctx.send("❌ Nie znaleziono nagłówka 'Daily Codes'.")
                 await browser.close()
                 return
 
-            # znajdź wspólnego rodzica kafelków (czyli całą sekcję)
-            section = await tile.evaluate_handle("""
+            # znajdź rodzica nagłówka (cała sekcja z kafelkami)
+            section = await header.evaluate_handle("""
                 node => {
                     let parent = node.parentElement;
-                    while (parent && parent.querySelectorAll('img').length < 3) {
+                    while (parent && parent.querySelectorAll('img, div').length < 5) {
                         parent = parent.parentElement;
                     }
                     return parent;
                 }
             """)
 
-            # przewiń do widoku
+            if not section:
+                await ctx.send("❌ Nie udało się znaleźć sekcji z kafelkami.")
+                await browser.close()
+                return
+
+            # przewiń sekcję do widoku
             await section.scroll_into_view_if_needed()
-            await asyncio.sleep(1)
+            await asyncio.sleep(2)
 
-            # zrób zrzut ekranu całej sekcji
-            screenshot_path = "daily_codes.png"
+            # zrób zrzut ekranu sekcji z kafelkami
+            screenshot_path = "daily_codes_section.png"
             await section.screenshot(path=screenshot_path)
-            await browser.close()
 
-            await ctx.send("✅ Oto sekcja **Daily Codes** 👇", file=discord.File(screenshot_path))
+            await browser.close()
+            await ctx.send("✅ Oto aktualne **Daily Codes** 👇", file=discord.File(screenshot_path))
 
     except Exception as e:
         await ctx.send(f"❌ Błąd: `{e}`")
@@ -239,6 +244,7 @@ async def setup_hook():
 # ---------------- Run bot ----------------
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
+
 
 
 
