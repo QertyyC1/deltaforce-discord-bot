@@ -101,50 +101,37 @@ async def cmd_sprawdz(ctx):
             page = await browser.new_page(viewport={"width": 1920, "height": 1080})
 
             await page.goto("https://deltaforcetools.gg", wait_until="networkidle")
-            await asyncio.sleep(8)  # daj czas na załadowanie kafelków
+            await asyncio.sleep(8)  # czekaj na załadowanie kafelków
 
-            # przewiń trochę w dół, aby sekcja się pojawiła
-            await page.evaluate("window.scrollBy(0, window.innerHeight / 1.5)")
-            await asyncio.sleep(3)
-
-            # znajdź element z nagłówkiem "Daily Codes"
+            # znajdź pozycję nagłówka "Daily Codes"
             header = await page.query_selector("text=Daily Codes")
             if not header:
                 await ctx.send("❌ Nie znaleziono nagłówka 'Daily Codes'.")
                 await browser.close()
                 return
 
-            # znajdź rodzica nagłówka (cała sekcja z kafelkami)
-            section = await header.evaluate_handle("""
-                node => {
-                    let parent = node.parentElement;
-                    while (parent && parent.querySelectorAll('img, div').length < 5) {
-                        parent = parent.parentElement;
-                    }
-                    return parent;
-                }
-            """)
-
-            if not section:
-                await ctx.send("❌ Nie udało się znaleźć sekcji z kafelkami.")
+            # pobierz współrzędne nagłówka
+            box = await header.bounding_box()
+            if not box:
+                await ctx.send("❌ Nie udało się odczytać pozycji sekcji.")
                 await browser.close()
                 return
 
-            # przewiń sekcję do widoku
-            await section.scroll_into_view_if_needed()
+            # przewiń stronę, żeby nagłówek był u góry ekranu
+            await page.evaluate(f"window.scrollTo(0, {box['y']});")
             await asyncio.sleep(2)
 
-            # zrób zrzut ekranu sekcji z kafelkami
+            # zrób zrzut fragmentu strony 100px poniżej nagłówka (sekcja kafelków)
             screenshot_path = "daily_codes_section.png"
-            await section.screenshot(path=screenshot_path)
+            await page.screenshot(
+                path=screenshot_path,
+                clip={
+                    "x": 0,
+                    "y": box["y"] + 80,  # przesunięcie w dół pod napis "Daily Codes"
+                    "width": 1920,
+                    "height": 600,       # wysokość sekcji z kafelkami
+                },
 
-            await browser.close()
-            await ctx.send("✅ Oto aktualne **Daily Codes** 👇", file=discord.File(screenshot_path))
-
-    except Exception as e:
-        await ctx.send(f"❌ Błąd: `{e}`")
-        import traceback
-        traceback.print_exc()
 
 
 # ---------------- Daily scheduler ----------------
@@ -244,6 +231,7 @@ async def setup_hook():
 # ---------------- Run bot ----------------
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
+
 
 
 
