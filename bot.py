@@ -97,44 +97,51 @@ async def cmd_sprawdz(ctx):
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
-            page = await browser.new_page(viewport={"width": 1600, "height": 1200})
+            page = await browser.new_page(viewport={"width": 1920, "height": 1080})
 
             await page.goto("https://deltaforcetools.gg", wait_until="networkidle")
             await asyncio.sleep(5)
 
-            # przewiń w dół
-            await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2)")
+            # przewiń trochę w dół (sekcja jest niżej na stronie)
+            await page.evaluate("window.scrollBy(0, document.body.scrollHeight / 2)")
             await asyncio.sleep(2)
 
-            # znajdź sekcję
-            section = await page.query_selector("text=Daily Codes")
-            if not section:
-                await ctx.send("❌ Nie znaleziono sekcji **Daily Codes** na stronie.")
+            # znajdź sekcję "Daily Codes"
+            header = await page.query_selector("text=Daily Codes")
+            if not header:
+                await ctx.send("❌ Nie znaleziono sekcji **Daily Codes**.")
                 await browser.close()
                 return
 
-            # znajdź kontener sekcji
-            container = await section.evaluate_handle("node => node.closest('section') || node.parentElement")
-            if not container:
-                await ctx.send("❌ Nie udało się odnaleźć kontenera sekcji.")
-                await browser.close()
-                return
+            # znajdź kontener zawierający kafelki (idący po tytule)
+            container = await header.evaluate_handle("""
+                node => {
+                    let next = node.parentElement;
+                    for (let i = 0; i < 10; i++) {
+                        if (!next) break;
+                        // szukamy węzła zawierającego karty z kodami
+                        if (next.querySelectorAll('img, h2, h3').length > 3)
+                            return next;
+                        next = next.nextElementSibling;
+                    }
+                    return node.parentElement;
+                }
+            """)
 
-            # przewiń i zrób screenshot
+            # przewiń do widoku i zrób screenshot
             await container.scroll_into_view_if_needed()
             await asyncio.sleep(1)
+
             screenshot_path = "daily_codes.png"
             await container.screenshot(path=screenshot_path)
             await browser.close()
 
-            await ctx.send("✅ Udało się! Oto sekcja **Daily Codes** 👇", file=discord.File(screenshot_path))
+            await ctx.send("✅ Oto sekcja **Daily Codes** 👇", file=discord.File(screenshot_path))
 
     except Exception as e:
         await ctx.send(f"❌ Wystąpił błąd: `{e}`")
         import traceback
         traceback.print_exc()
-
-
 
 # ---------------- Daily scheduler ----------------
 async def seconds_until_next_utc_run(hour_utc=1, minute_utc=0):
@@ -233,6 +240,7 @@ async def setup_hook():
 # ---------------- Run bot ----------------
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
+
 
 
 
