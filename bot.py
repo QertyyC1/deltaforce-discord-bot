@@ -93,43 +93,30 @@ async def cmd_sprawdz(ctx):
     from playwright.async_api import async_playwright
     import discord
 
-    await ctx.send("🔄 Pobieram sekcję **Daily Codes** ze strony deltaforcetools.gg...")
+    await ctx.send("🔄 Pobieram sekcję **Daily Codes** ...")
 
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
-            page = await browser.new_page(viewport={"width": 1920, "height": 1080})
+            page = await browser.new_page(viewport={"width": 1920, "height": 2000})
 
             await page.goto("https://deltaforcetools.gg", wait_until="networkidle")
-            await asyncio.sleep(8)  # czekaj na pełne załadowanie kafelków
+            await asyncio.sleep(10)  # czas na załadowanie strony i kafelków
 
-            # znajdź pozycję nagłówka "Daily Codes"
-            header = await page.query_selector("text=Daily Codes")
-            if not header:
-                await ctx.send("❌ Nie znaleziono nagłówka 'Daily Codes'.")
-                await browser.close()
-                return
+            # przewiń trochę w dół, żeby kafelki Daily Codes były widoczne
+            await page.evaluate("window.scrollTo(0, 1400)")
+            await asyncio.sleep(3)
 
-            # pobierz współrzędne nagłówka
-            box = await header.bounding_box()
-            if not box:
-                await ctx.send("❌ Nie udało się odczytać pozycji sekcji.")
-                await browser.close()
-                return
-
-            # przewiń stronę, żeby nagłówek był u góry ekranu
-            await page.evaluate(f"window.scrollTo(0, {box['y']});")
-            await asyncio.sleep(2)
-
-            # zrób zrzut fragmentu strony 100px poniżej nagłówka (sekcja kafelków)
             screenshot_path = "daily_codes_section.png"
+
+            # zrób zrzut dużego obszaru (od 1300px w dół)
             await page.screenshot(
                 path=screenshot_path,
                 clip={
                     "x": 0,
-                    "y": box["y"] + 80,  # przesunięcie w dół pod napis "Daily Codes"
+                    "y": 1300,
                     "width": 1920,
-                    "height": 650,       # wysokość sekcji z kafelkami
+                    "height": 900,
                 },
             )
 
@@ -139,7 +126,8 @@ async def cmd_sprawdz(ctx):
     except Exception as e:
         await ctx.send(f"❌ Błąd: `{e}`")
         import traceback
-        traceback.print
+        traceback.print_exc()
+
 
 # ---------------- Daily scheduler ----------------
 async def seconds_until_next_utc_run(hour_utc=1, minute_utc=0):
@@ -238,6 +226,7 @@ async def setup_hook():
 # ---------------- Run bot ----------------
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
+
 
 
 
