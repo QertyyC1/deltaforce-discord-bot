@@ -39,52 +39,51 @@ async def delete_old_bot_messages(channel, limit=50):
 
 # ---------------- Playwright scraper + screenshots ----------------
 # returns list of temp file paths (screenshots) or None
-async def fetch_and_screenshot_tiles(url="https://deltaforcetools.gg"):
-    try:
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True, args=[
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-gpu",
-            ])
-            page = await browser.new_page(
-                viewport={"width": 1280, "height": 2500},
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-            )
+import asyncio
+from playwright.async_api import async_playwright
 
-            await page.goto(url, wait_until="networkidle", timeout=60000)
-            await page.wait_for_timeout(5000)
+async def fetch_and_screenshot_tiles():
+    url = "https://deltaforcetools.gg"
+    output_file = "daily_codes.png"
 
-            # Scrollujemy, aby załadowała się sekcja z kodami
-            for _ in range(10):
-                await page.mouse.wheel(0, 800)
-                await page.wait_for_timeout(600)
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page(viewport={"width": 1600, "height": 1200})
 
-            # Szukamy sekcji z "Daily Codes"
-            section = await page.query_selector("section:has-text('Daily Codes')")
+        print("🌍 Otwieram stronę...")
+        await page.goto(url, wait_until="networkidle")
+        await asyncio.sleep(5)  # pozwól stronie się załadować
 
-            # Jeśli nie znajdzie, spróbuj alternatywne selektory
-            if not section:
-                section = await page.query_selector("div:has-text('Daily Codes')")
-            if not section:
-                section = await page.query_selector("main")
+        # przewiń trochę w dół żeby sekcja się pojawiła
+        await page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2)")
+        await asyncio.sleep(2)
 
-            path = tempfile.NamedTemporaryFile(suffix=".png", delete=False).name
+        print("🔎 Szukam sekcji 'Daily Codes'...")
+        # znajdź sekcję po nagłówku tekstowym
+        section = await page.query_selector("text=Daily Codes")
 
-            if section:
-                print("✅ Znaleziono sekcję 'Daily Codes' – robię screenshot...")
-                await section.screenshot(path=path)
-            else:
-                print("⚠️ Nie znaleziono sekcji — robię pełny screenshot strony.")
-                await page.screenshot(path=path, full_page=True)
-
+        if not section:
+            print("❌ Nie znaleziono sekcji 'Daily Codes'")
             await browser.close()
-            return [path]
+            return None
 
-    except Exception as e:
-        print("❌ Playwright FATAL:", e)
-        return None
+        # znajdź nadrzędny kontener sekcji (czyli div, w którym jest ten nagłówek)
+        container = await section.evaluate_handle("node => node.closest('section') || node.parentElement")
+
+        if not container:
+            print("❌ Nie znaleziono kontenera sekcji.")
+            await browser.close()
+            return None
+
+        # przewiń do widoku i zrób screenshot tylko tej sekcji
+        await container.scroll_into_view_if_needed()
+        await asyncio.sleep(1)
+        await container.screenshot(path=output_file)
+
+        print(f"✅ Zrzut sekcji zapisany jako {output_file}")
+        await browser.close()
+        return [output_file]
+
 
 
 # ---------------- Commands ----------------
@@ -219,5 +218,6 @@ async def setup_hook():
 # ---------------- Run bot ----------------
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
+
 
 
