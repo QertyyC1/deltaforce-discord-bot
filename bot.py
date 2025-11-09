@@ -101,22 +101,22 @@ async def cmd_sprawdz(ctx):
             page = await browser.new_page(viewport={"width": 1920, "height": 2000})
 
             await page.goto("https://deltaforcetools.gg", wait_until="networkidle")
-            await asyncio.sleep(10)  # czas na załadowanie strony i kafelków
+            await asyncio.sleep(10)  # czekamy aż wszystko się załaduje
 
-            # przewiń trochę w dół, żeby kafelki Daily Codes były widoczne
-            await page.evaluate("window.scrollTo(0, 1400)")
+            # przewiń w okolice sekcji Daily Codes
+            await page.evaluate("window.scrollTo(0, 900)")
             await asyncio.sleep(3)
 
             screenshot_path = "daily_codes_section.png"
 
-            # zrób zrzut dużego obszaru (od 1300px w dół)
+            # zrób screenshot z obszaru sekcji Daily Codes
             await page.screenshot(
                 path=screenshot_path,
                 clip={
                     "x": 0,
-                    "y": 1300,
+                    "y": 900,
                     "width": 1920,
-                    "height": 900,
+                    "height": 1000,
                 },
             )
 
@@ -127,6 +127,7 @@ async def cmd_sprawdz(ctx):
         await ctx.send(f"❌ Błąd: `{e}`")
         import traceback
         traceback.print_exc()
+
 
 
 # ---------------- Daily scheduler ----------------
@@ -226,6 +227,7 @@ async def setup_hook():
 # ---------------- Run bot ----------------
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
+
 
 
 
