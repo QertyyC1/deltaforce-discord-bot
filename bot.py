@@ -114,11 +114,12 @@ async def cmd_sprawdz(ctx):
                 path=screenshot_path,
                 clip={
                     "x": 0,
-                    "y": 900,
-                    "width": 1920,
-                    "height": 1000,
+                    "y": 150,      # początek sekcji Daily Codes
+                    "width": 1920, # pełna szerokość strony
+                    "height": 750, # kończy się tuż pod kafelkami
                 },
             )
+
 
             await browser.close()
             await ctx.send("✅ Oto aktualne **Daily Codes** 👇", file=discord.File(screenshot_path))
@@ -227,6 +228,7 @@ async def setup_hook():
 # ---------------- Run bot ----------------
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
+
 
 
 
