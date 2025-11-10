@@ -116,7 +116,7 @@ async def cmd_sprawdz(ctx):
                     "x": 0,
                     "y": 900,      # początek sekcji Daily Codes
                     "width": 1920, # pełna szerokość strony
-                    "height": 950, # kończy się tuż pod kafelkami
+                    "height": 910, # kończy się tuż pod kafelkami
                 },
             )
 
@@ -228,6 +228,7 @@ async def setup_hook():
 # ---------------- Run bot ----------------
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
+
 
 
 
