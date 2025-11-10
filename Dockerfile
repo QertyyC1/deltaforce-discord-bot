@@ -26,11 +26,10 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 # ===============================
-# 5️⃣  Instalacja Playwrighta + Chromium
+# 5️⃣  Instalacja Playwrighta + Chromium (bez install-deps)
 # ===============================
 RUN pip install playwright && \
-    python -m playwright install-deps chromium && \
-    playwright install chromium
+    playwright install --with-deps chromium || true
 
 # ===============================
 # 6️⃣  Skopiowanie kodu bota
