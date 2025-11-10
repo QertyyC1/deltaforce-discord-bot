@@ -114,9 +114,9 @@ async def cmd_sprawdz(ctx):
                 path=screenshot_path,
                 clip={
                     "x": 0,
-                    "y": 150,      # początek sekcji Daily Codes
+                    "y": 200,      # początek sekcji Daily Codes
                     "width": 1920, # pełna szerokość strony
-                    "height": 750, # kończy się tuż pod kafelkami
+                    "height": 600, # kończy się tuż pod kafelkami
                 },
             )
 
@@ -228,6 +228,7 @@ async def setup_hook():
 # ---------------- Run bot ----------------
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
+
 
 
 
