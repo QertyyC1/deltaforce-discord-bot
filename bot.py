@@ -92,55 +92,21 @@ async def cmd_sprawdz(ctx):
     import asyncio
     from playwright.async_api import async_playwright
     import discord
-    import re
-    import os
 
     # ==========================
     # 🔧 USTAWIENIA SCREENA
     # ==========================
-    SCREEN_X = 270         # przesunięcie w poziomie (lewo-prawo)
-    SCREEN_Y = 900         # przesunięcie w pionie (góra-dół)
-    SCREEN_WIDTH = 1920    # szerokość zrzutu
-    SCREEN_HEIGHT = 350    # wysokość zrzutu
-    SCROLL_Y = 900         # pozycja scrolla strony
-    WAIT_BEFORE_SCREEN = 3 # czas oczekiwania po przewinięciu (sekundy)
+    SCREEN_X = 265         # przesunięcie w poziomie (lewo-prawo)
+    SCREEN_Y = 900        # przesunięcie w pionie (góra-dół)
+    SCREEN_WIDTH = 1920   # szerokość zrzutu
+    SCREEN_HEIGHT = 350   # wysokość zrzutu
+    SCROLL_Y = 900        # pozycja scrolla strony
+    WAIT_BEFORE_SCREEN = 3  # czas oczekiwania po przewinięciu (sekundy)
     # ==========================
 
-    # Teksty które chcemy usuwać (dokładnie, bez gwiazdek)
-    TARGETS = {
-        "✅ Oto aktualne Daily Codes 👇",
-        "🔄 Pobieram sekcję Daily Codes..."
-    }
+    await ctx.send("🔄 Pobieram sekcję **Daily Codes**...")
 
-    # helper: normalizuje zawartość wiadomości (usuwa '*', trim)
-    def normalize(s: str) -> str:
-        if s is None:
-            return ""
-        return re.sub(r"\*", "", s).strip()
-
-    # 1) usuń poprzednie wiadomości bota o podanych treściach
     try:
-        async for message in ctx.channel.history(limit=100):
-            if message.author == bot.user:
-                norm = normalize(message.content)
-                if norm in TARGETS:
-                    try:
-                        await message.delete()
-                    except discord.NotFound:
-                        pass
-                    except Exception:
-                        # nie przerywamy pętli, ale logujemy na konsoli
-                        print("Błąd podczas usuwania starej wiadomości:", exc_info=True)
-    except Exception as e:
-        print("Błąd podczas przeglądania historii kanału:", e)
-
-    # 2) wyślij komunikat pobierania (dokładnie taki, który potem chcemy usuwać)
-    fetch_msg = None
-    screenshot_path = "daily_codes_section.png"
-    browser = None
-    try:
-        fetch_msg = await ctx.send("🔄 Pobieram sekcję Daily Codes...")
-
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
             page = await browser.new_page(viewport={"width": 1920, "height": 2000})
@@ -151,6 +117,8 @@ async def cmd_sprawdz(ctx):
             # przewiń w okolice sekcji Daily Codes
             await page.evaluate(f"window.scrollTo(0, {SCROLL_Y})")
             await asyncio.sleep(WAIT_BEFORE_SCREEN)
+
+            screenshot_path = "daily_codes_section.png"
 
             # zrób screenshot z wybranego obszaru
             await page.screenshot(
@@ -163,51 +131,61 @@ async def cmd_sprawdz(ctx):
                 },
             )
 
-            # zamknij przeglądarkę
             await browser.close()
-            browser = None
-
-        # usuń komunikat "pobieram"
-        try:
-            if fetch_msg:
-                await fetch_msg.delete()
-        except discord.NotFound:
-            pass
-        except Exception:
-            print("Błąd przy usuwaniu komunikatu pobierania.", exc_info=True)
-
-        # wyślij rezultat (dokładny tekst, który będzie można potem usunąć)
-        await ctx.send("✅ Oto aktualne Daily Codes 👇", file=discord.File(screenshot_path))
+            await ctx.send("✅ Oto aktualne **Daily Codes** 👇", file=discord.File(screenshot_path))
 
     except Exception as e:
-        # jeśli coś się posypało — spróbuj usunąć komunikat pobierania i poinformuj użytkownika
-        try:
-            if fetch_msg:
-                await fetch_msg.delete()
-        except discord.NotFound:
-            pass
-        except Exception:
-            print("Błąd przy usuwaniu komunikatu po wyjątku.", exc_info=True)
-
         await ctx.send(f"❌ Błąd: `{e}`")
         import traceback
         traceback.print_exc()
 
-    finally:
-        # cleanup: zamknij browser jeśli nadal otwarty
+
+
+# ---------------- Daily scheduler ----------------
+async def seconds_until_next_utc_run(hour_utc=1, minute_utc=0):
+    now = datetime.now(timezone.utc)
+    target = now.replace(hour=hour_utc, minute=minute_utc, second=0, microsecond=0)
+    if target <= now:
+        target += timedelta(days=1)
+    return (target - now).total_seconds()
+
+@tasks.loop(hours=24)
+async def daily_job():
+    if not CHANNEL_ID:
+        print("⚠️ CHANNEL_ID not set — daily_job will skip sending.")
+        return
+
+    channel = bot.get_channel(CHANNEL_ID)
+    if not channel:
+        print("⚠️ Nie znaleziono kanału (daily_job).")
+        return
+
+    print("⏳ daily_job: robimy screenshoty...")
+    files = await fetch_tiles()
+    if not files:
         try:
-            if browser is not None:
-                await browser.close()
-        except Exception:
+            await channel.send("⚠️ Autosprawdzenie — nie udało się pobrać kafelków.")
+        except:
+            pass
+        return
+
+    await delete_old_bot_messages(channel)
+
+    for path in files:
+        try:
+            await channel.send(file=discord.File(path))
+        except Exception as e:
+            print("Błąd wysyłania pliku w daily_job:", e)
+        try:
+            os.remove(path)
+        except:
             pass
 
-        # usuń plik screena z dysku, jeśli istnieje
-        try:
-            if os.path.exists(screenshot_path):
-                os.remove(screenshot_path)
-        except Exception:
-            print("Nie udało się usunąć pliku screena.", exc_info=True)
-
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    try:
+        await channel.send(f"🎯 Daily Codes — aktualizacja: {now}")
+    except:
+        pass
 
 # ---------------- Keepalive webserver (Flask) ----------------
 app = Flask("df_bot_keepalive")
@@ -246,96 +224,17 @@ async def setup_hook():
     asyncio.create_task(keepalive_ping())
     print("✅ Keepalive pinger started.")
 
-TARGET_CHANNEL_ID = 1436296685788729415  
-
-@tasks.loop(minutes=1)
-async def daily_codes_task():
-    now = datetime.now()  # poprawione
-    # log co minutę, żeby widzieć że działa
-    print(f"[{now.strftime('%H:%M:%S')}] ⏱️ Sprawdzanie czasu dla auto-wysyłki...")
-
-    # sprawdza czy jest 00:10
-    if now.hour == 0 and now.minute == 10:
-        print("🕛 Wysyłam automatycznie Daily Codes...")
-        channel = bot.get_channel(TARGET_CHANNEL_ID)
-        if channel:
-            SCREEN_X = 270
-            SCREEN_Y = 900
-            SCREEN_WIDTH = 1920
-            SCREEN_HEIGHT = 350
-            SCROLL_Y = 900
-            WAIT_BEFORE_SCREEN = 3
-
-            await channel.send("🔄 Pobieram sekcję Daily Codes...")
-
-            try:
-                async with async_playwright() as p:
-                    browser = await p.chromium.launch(headless=True)
-                    page = await browser.new_page(viewport={"width": 1920, "height": 2000})
-                    await page.goto("https://deltaforcetools.gg", wait_until="networkidle")
-                    await asyncio.sleep(10)
-                    await page.evaluate(f"window.scrollTo(0, {SCROLL_Y})")
-                    await asyncio.sleep(WAIT_BEFORE_SCREEN)
-
-                    screenshot_path = "daily_codes_section.png"
-                    await page.screenshot(
-                        path=screenshot_path,
-                        clip={
-                            "x": SCREEN_X,
-                            "y": SCREEN_Y,
-                            "width": SCREEN_WIDTH,
-                            "height": SCREEN_HEIGHT,
-                        },
-                    )
-
-                    await browser.close()
-                    await channel.send("✅ Oto aktualne Daily Codes 👇", file=discord.File(screenshot_path))
-                    os.remove(screenshot_path)
-            except Exception as e:
-                await channel.send(f"❌ Błąd: `{e}`")
-                import traceback
-                traceback.print_exc()
-
-
-@daily_codes_task.before_loop
-async def before_task():
-    await bot.wait_until_ready()
-    print("🕒 Uruchamiam automatyczne wysyłanie codziennych kodów...")
-
-# start zadania po starcie bota
-daily_codes_task.start()
+    # schedule first daily run at next 01:00 UTC and then start loop
+    async def starter():
+        wait = await seconds_until_next_utc_run(1, 0)
+        print(f"⏳ First daily_job will run in {int(wait)}s (-> 01:00 UTC)")
+        await asyncio.sleep(wait)
+        # run once now
+        await daily_job()
+        # then start the loop every 24h
+        daily_job.start()
+    asyncio.create_task(starter())
 
 # ---------------- Run bot ----------------
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
