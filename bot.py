@@ -209,53 +209,6 @@ async def cmd_sprawdz(ctx):
             print("Nie udało się usunąć pliku screena.", exc_info=True)
 
 
-
-# ---------------- Daily scheduler ----------------
-async def seconds_until_next_utc_run(hour_utc=1, minute_utc=0):
-    now = datetime.now(timezone.utc)
-    target = now.replace(hour=hour_utc, minute=minute_utc, second=0, microsecond=0)
-    if target <= now:
-        target += timedelta(days=1)
-    return (target - now).total_seconds()
-
-@tasks.loop(hours=24)
-async def daily_job():
-    if not CHANNEL_ID:
-        print("⚠️ CHANNEL_ID not set — daily_job will skip sending.")
-        return
-
-    channel = bot.get_channel(CHANNEL_ID)
-    if not channel:
-        print("⚠️ Nie znaleziono kanału (daily_job).")
-        return
-
-    print("⏳ daily_job: robimy screenshoty...")
-    files = await fetch_tiles()
-    if not files:
-        try:
-            await channel.send("⚠️ Autosprawdzenie — nie udało się pobrać kafelków.")
-        except:
-            pass
-        return
-
-    await delete_old_bot_messages(channel)
-
-    for path in files:
-        try:
-            await channel.send(file=discord.File(path))
-        except Exception as e:
-            print("Błąd wysyłania pliku w daily_job:", e)
-        try:
-            os.remove(path)
-        except:
-            pass
-
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    try:
-        await channel.send(f"🎯 Daily Codes — aktualizacja: {now}")
-    except:
-        pass
-
 # ---------------- Keepalive webserver (Flask) ----------------
 app = Flask("df_bot_keepalive")
 
@@ -293,20 +246,69 @@ async def setup_hook():
     asyncio.create_task(keepalive_ping())
     print("✅ Keepalive pinger started.")
 
-    # schedule first daily run at next 01:00 UTC and then start loop
-    async def starter():
-        wait = await seconds_until_next_utc_run(1, 0)
-        print(f"⏳ First daily_job will run in {int(wait)}s (-> 01:00 UTC)")
-        await asyncio.sleep(wait)
-        # run once now
-        await daily_job()
-        # then start the loop every 24h
-        daily_job.start()
-    asyncio.create_task(starter())
+TARGET_CHANNEL_ID = 1436296685788729415  
+
+@tasks.loop(minutes=1)
+async def daily_codes_task():
+    now = datetime.now()  # poprawione
+    # log co minutę, żeby widzieć że działa
+    print(f"[{now.strftime('%H:%M:%S')}] ⏱️ Sprawdzanie czasu dla auto-wysyłki...")
+
+    # sprawdza czy jest 00:10
+    if now.hour == 0 and now.minute == 10:
+        print("🕛 Wysyłam automatycznie Daily Codes...")
+        channel = bot.get_channel(TARGET_CHANNEL_ID)
+        if channel:
+            SCREEN_X = 270
+            SCREEN_Y = 900
+            SCREEN_WIDTH = 1920
+            SCREEN_HEIGHT = 350
+            SCROLL_Y = 900
+            WAIT_BEFORE_SCREEN = 3
+
+            await channel.send("🔄 Pobieram sekcję Daily Codes...")
+
+            try:
+                async with async_playwright() as p:
+                    browser = await p.chromium.launch(headless=True)
+                    page = await browser.new_page(viewport={"width": 1920, "height": 2000})
+                    await page.goto("https://deltaforcetools.gg", wait_until="networkidle")
+                    await asyncio.sleep(10)
+                    await page.evaluate(f"window.scrollTo(0, {SCROLL_Y})")
+                    await asyncio.sleep(WAIT_BEFORE_SCREEN)
+
+                    screenshot_path = "daily_codes_section.png"
+                    await page.screenshot(
+                        path=screenshot_path,
+                        clip={
+                            "x": SCREEN_X,
+                            "y": SCREEN_Y,
+                            "width": SCREEN_WIDTH,
+                            "height": SCREEN_HEIGHT,
+                        },
+                    )
+
+                    await browser.close()
+                    await channel.send("✅ Oto aktualne Daily Codes 👇", file=discord.File(screenshot_path))
+                    os.remove(screenshot_path)
+            except Exception as e:
+                await channel.send(f"❌ Błąd: `{e}`")
+                import traceback
+                traceback.print_exc()
+
+
+@daily_codes_task.before_loop
+async def before_task():
+    await bot.wait_until_ready()
+    print("🕒 Uruchamiam automatyczne wysyłanie codziennych kodów...")
+
+# start zadania po starcie bota
+daily_codes_task.start()
 
 # ---------------- Run bot ----------------
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
+
 
 
 
