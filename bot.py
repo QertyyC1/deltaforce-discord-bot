@@ -99,7 +99,7 @@ async def cmd_sprawdz(ctx):
     SCREEN_X = 0          # przesunięcie w poziomie (lewo-prawo)
     SCREEN_Y = 900        # przesunięcie w pionie (góra-dół)
     SCREEN_WIDTH = 1920   # szerokość zrzutu
-    SCREEN_HEIGHT = 400   # wysokość zrzutu
+    SCREEN_HEIGHT = 380   # wysokość zrzutu
     SCROLL_Y = 900        # pozycja scrolla strony
     WAIT_BEFORE_SCREEN = 3  # czas oczekiwania po przewinięciu (sekundy)
     # ==========================
@@ -238,6 +238,7 @@ async def setup_hook():
 # ---------------- Run bot ----------------
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
+
 
 
 
