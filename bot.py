@@ -93,6 +93,17 @@ async def cmd_sprawdz(ctx):
     from playwright.async_api import async_playwright
     import discord
 
+    # ==========================
+    # 🔧 USTAWIENIA SCREENA
+    # ==========================
+    SCREEN_X = 0          # przesunięcie w poziomie (lewo-prawo)
+    SCREEN_Y = 900        # przesunięcie w pionie (góra-dół)
+    SCREEN_WIDTH = 1920   # szerokość zrzutu
+    SCREEN_HEIGHT = 910   # wysokość zrzutu
+    SCROLL_Y = 900        # pozycja scrolla strony
+    WAIT_BEFORE_SCREEN = 3  # czas oczekiwania po przewinięciu (sekundy)
+    # ==========================
+
     await ctx.send("🔄 Pobieram sekcję **Daily Codes**...")
 
     try:
@@ -104,22 +115,21 @@ async def cmd_sprawdz(ctx):
             await asyncio.sleep(10)  # czekamy aż wszystko się załaduje
 
             # przewiń w okolice sekcji Daily Codes
-            await page.evaluate("window.scrollTo(0, 900)")
-            await asyncio.sleep(3)
+            await page.evaluate(f"window.scrollTo(0, {SCROLL_Y})")
+            await asyncio.sleep(WAIT_BEFORE_SCREEN)
 
             screenshot_path = "daily_codes_section.png"
 
-            # zrób screenshot z obszaru sekcji Daily Codes
+            # zrób screenshot z wybranego obszaru
             await page.screenshot(
                 path=screenshot_path,
                 clip={
-                    "x": 0,
-                    "y": 900,      # początek sekcji Daily Codes
-                    "width": 1920, # pełna szerokość strony
-                    "height": 910, # kończy się tuż pod kafelkami
+                    "x": SCREEN_X,
+                    "y": SCREEN_Y,
+                    "width": SCREEN_WIDTH,
+                    "height": SCREEN_HEIGHT,
                 },
             )
-
 
             await browser.close()
             await ctx.send("✅ Oto aktualne **Daily Codes** 👇", file=discord.File(screenshot_path))
@@ -228,6 +238,7 @@ async def setup_hook():
 # ---------------- Run bot ----------------
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
+
 
 
 
