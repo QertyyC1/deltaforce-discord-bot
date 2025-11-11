@@ -96,7 +96,7 @@ async def cmd_sprawdz(ctx):
     # ==========================
     # 🔧 USTAWIENIA SCREENA
     # ==========================
-    SCREEN_X = 250         # przesunięcie w poziomie (lewo-prawo)
+    SCREEN_X = 270         # przesunięcie w poziomie (lewo-prawo)
     SCREEN_Y = 900        # przesunięcie w pionie (góra-dół)
     SCREEN_WIDTH = 1920   # szerokość zrzutu
     SCREEN_HEIGHT = 350   # wysokość zrzutu
@@ -238,6 +238,7 @@ async def setup_hook():
 # ---------------- Run bot ----------------
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
+
 
 
 
