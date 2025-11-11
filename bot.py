@@ -92,21 +92,55 @@ async def cmd_sprawdz(ctx):
     import asyncio
     from playwright.async_api import async_playwright
     import discord
+    import re
+    import os
 
     # ==========================
     # 🔧 USTAWIENIA SCREENA
     # ==========================
     SCREEN_X = 270         # przesunięcie w poziomie (lewo-prawo)
-    SCREEN_Y = 900        # przesunięcie w pionie (góra-dół)
-    SCREEN_WIDTH = 1920   # szerokość zrzutu
-    SCREEN_HEIGHT = 350   # wysokość zrzutu
-    SCROLL_Y = 900        # pozycja scrolla strony
-    WAIT_BEFORE_SCREEN = 3  # czas oczekiwania po przewinięciu (sekundy)
+    SCREEN_Y = 900         # przesunięcie w pionie (góra-dół)
+    SCREEN_WIDTH = 1920    # szerokość zrzutu
+    SCREEN_HEIGHT = 350    # wysokość zrzutu
+    SCROLL_Y = 900         # pozycja scrolla strony
+    WAIT_BEFORE_SCREEN = 3 # czas oczekiwania po przewinięciu (sekundy)
     # ==========================
 
-    await ctx.send("🔄 Pobieram sekcję **Daily Codes**...")
+    # Teksty które chcemy usuwać (dokładnie, bez gwiazdek)
+    TARGETS = {
+        "✅ Oto aktualne Daily Codes 👇",
+        "🔄 Pobieram sekcję Daily Codes..."
+    }
 
+    # helper: normalizuje zawartość wiadomości (usuwa '*', trim)
+    def normalize(s: str) -> str:
+        if s is None:
+            return ""
+        return re.sub(r"\*", "", s).strip()
+
+    # 1) usuń poprzednie wiadomości bota o podanych treściach
     try:
+        async for message in ctx.channel.history(limit=100):
+            if message.author == bot.user:
+                norm = normalize(message.content)
+                if norm in TARGETS:
+                    try:
+                        await message.delete()
+                    except discord.NotFound:
+                        pass
+                    except Exception:
+                        # nie przerywamy pętli, ale logujemy na konsoli
+                        print("Błąd podczas usuwania starej wiadomości:", exc_info=True)
+    except Exception as e:
+        print("Błąd podczas przeglądania historii kanału:", e)
+
+    # 2) wyślij komunikat pobierania (dokładnie taki, który potem chcemy usuwać)
+    fetch_msg = None
+    screenshot_path = "daily_codes_section.png"
+    browser = None
+    try:
+        fetch_msg = await ctx.send("🔄 Pobieram sekcję Daily Codes...")
+
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
             page = await browser.new_page(viewport={"width": 1920, "height": 2000})
@@ -117,8 +151,6 @@ async def cmd_sprawdz(ctx):
             # przewiń w okolice sekcji Daily Codes
             await page.evaluate(f"window.scrollTo(0, {SCROLL_Y})")
             await asyncio.sleep(WAIT_BEFORE_SCREEN)
-
-            screenshot_path = "daily_codes_section.png"
 
             # zrób screenshot z wybranego obszaru
             await page.screenshot(
@@ -131,13 +163,50 @@ async def cmd_sprawdz(ctx):
                 },
             )
 
+            # zamknij przeglądarkę
             await browser.close()
-            await ctx.send("✅ Oto aktualne **Daily Codes** 👇", file=discord.File(screenshot_path))
+            browser = None
+
+        # usuń komunikat "pobieram"
+        try:
+            if fetch_msg:
+                await fetch_msg.delete()
+        except discord.NotFound:
+            pass
+        except Exception:
+            print("Błąd przy usuwaniu komunikatu pobierania.", exc_info=True)
+
+        # wyślij rezultat (dokładny tekst, który będzie można potem usunąć)
+        await ctx.send("✅ Oto aktualne Daily Codes 👇", file=discord.File(screenshot_path))
 
     except Exception as e:
+        # jeśli coś się posypało — spróbuj usunąć komunikat pobierania i poinformuj użytkownika
+        try:
+            if fetch_msg:
+                await fetch_msg.delete()
+        except discord.NotFound:
+            pass
+        except Exception:
+            print("Błąd przy usuwaniu komunikatu po wyjątku.", exc_info=True)
+
         await ctx.send(f"❌ Błąd: `{e}`")
         import traceback
         traceback.print_exc()
+
+    finally:
+        # cleanup: zamknij browser jeśli nadal otwarty
+        try:
+            if browser is not None:
+                await browser.close()
+        except Exception:
+            pass
+
+        # usuń plik screena z dysku, jeśli istnieje
+        try:
+            if os.path.exists(screenshot_path):
+                os.remove(screenshot_path)
+        except Exception:
+            print("Nie udało się usunąć pliku screena.", exc_info=True)
 
 
 
@@ -238,6 +307,7 @@ async def setup_hook():
 # ---------------- Run bot ----------------
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
+
 
 
 
