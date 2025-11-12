@@ -1,4 +1,3 @@
-# bot.py (fixed & improved)
 import os
 import asyncio
 import aiohttp
@@ -26,10 +25,19 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# ---------------- Helpers ----------------
+async def delete_old_bot_messages(channel, limit=100):
+    """Usuwa stare wiadomości bota z kanału."""
+    try:
+        async for msg in channel.history(limit=limit):
+            if msg.author == bot.user:
+                await msg.delete()
+    except Exception as e:
+        print("⚠️ Błąd podczas usuwania starych wiadomości:", e)
 
-# ---------------- Screenshot helper ----------------
-async def make_daily_codes_screenshot():
-    """Tworzy screenshot sekcji Daily Codes i zwraca ścieżkę do pliku."""
+# ---------------- Komenda !sprawdz ----------------
+@bot.command(name="sprawdz")
+async def cmd_sprawdz(ctx):
     SCREEN_X = 265
     SCREEN_Y = 900
     SCREEN_WIDTH = 1920
@@ -37,96 +45,112 @@ async def make_daily_codes_screenshot():
     SCROLL_Y = 900
     WAIT_BEFORE_SCREEN = 3
 
-    screenshot_path = "daily_codes_section.png"
-
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page(viewport={"width": 1920, "height": 2000})
-
-        print("🌍 Otwieram stronę deltaforcetools.gg ...")
-        await page.goto("https://deltaforcetools.gg", wait_until="networkidle")
-        await asyncio.sleep(10)
-
-        await page.evaluate(f"window.scrollTo(0, {SCROLL_Y})")
-        await asyncio.sleep(WAIT_BEFORE_SCREEN)
-
-        await page.screenshot(
-            path=screenshot_path,
-            clip={
-                "x": SCREEN_X,
-                "y": SCREEN_Y,
-                "width": SCREEN_WIDTH,
-                "height": SCREEN_HEIGHT,
-            },
-        )
-
-        await browser.close()
-
-    print("✅ Screenshot gotowy:", screenshot_path)
-    return screenshot_path
-
-
-# ---------------- Command: !sprawdz ----------------
-@bot.command(name="sprawdz")
-async def cmd_sprawdz(ctx):
     await ctx.send("🔄 Pobieram sekcję **Daily Codes**...")
 
     try:
-        screenshot_path = await make_daily_codes_screenshot()
-        await ctx.send("✅ Oto aktualne **Daily Codes** 👇", file=discord.File(screenshot_path))
-        os.remove(screenshot_path)
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            page = await browser.new_page(viewport={"width": 1920, "height": 2000})
+
+            await page.goto("https://deltaforcetools.gg", wait_until="networkidle")
+            await asyncio.sleep(10)
+
+            await page.evaluate(f"window.scrollTo(0, {SCROLL_Y})")
+            await asyncio.sleep(WAIT_BEFORE_SCREEN)
+
+            screenshot_path = "daily_codes_section.png"
+            await page.screenshot(
+                path=screenshot_path,
+                clip={
+                    "x": SCREEN_X,
+                    "y": SCREEN_Y,
+                    "width": SCREEN_WIDTH,
+                    "height": SCREEN_HEIGHT,
+                },
+            )
+
+            await browser.close()
+
+            # Usuń stare wiadomości przed wysłaniem nowej
+            await delete_old_bot_messages(ctx.channel)
+
+            await ctx.send("✅ Oto aktualne **Daily Codes** 👇", file=discord.File(screenshot_path))
+            os.remove(screenshot_path)
+
     except Exception as e:
         await ctx.send(f"❌ Błąd: `{e}`")
-        import traceback; traceback.print_exc()
+        import traceback
+        traceback.print_exc()
 
+# ---------------- Harmonogram codzienny ----------------
+async def seconds_until_next_utc_run(hour_utc=23, minute_utc=10):
+    """Zwraca liczbę sekund do następnego uruchomienia o określonej godzinie UTC."""
+    now = datetime.now(timezone.utc)
+    target = now.replace(hour=hour_utc, minute=minute_utc, second=0, microsecond=0)
+    if target <= now:
+        target += timedelta(days=1)
+    return (target - now).total_seconds()
 
-# ---------------- Auto daily check (00:10 Polish time) ----------------
-@tasks.loop(minutes=1)
-async def daily_codes_task():
-    # Czas polski = UTC+1 zimą / UTC+2 latem — poniżej przeliczenie
-    now_utc = datetime.utcnow().replace(tzinfo=timezone.utc)
-    now_pl = now_utc + timedelta(hours=1)  # zmień na 2h latem, jeśli potrzeba
+@tasks.loop(hours=24)
+async def daily_job():
+    """Automatycznie wysyła screena codziennie o 00:10 czasu polskiego."""
+    if not CHANNEL_ID:
+        print("⚠️ CHANNEL_ID not set — daily_job will skip sending.")
+        return
 
-    if now_pl.hour == 0 and now_pl.minute == 10:
-        channel = bot.get_channel(CHANNEL_ID)
-        if not channel:
-            print("⚠️ Nie znaleziono kanału do wysłania screena.")
-            return
+    channel = bot.get_channel(CHANNEL_ID)
+    if not channel:
+        print("⚠️ Nie znaleziono kanału (daily_job).")
+        return
 
-        print("🕛 Godzina 00:10 PL — wysyłam Daily Codes!")
+    print("📸 Wykonuję automatyczny zrzut sekcji Daily Codes...")
 
-        try:
-            await channel.send("🔄 Pobieram sekcję Daily Codes...")
-            screenshot_path = await make_daily_codes_screenshot()
+    SCREEN_X = 265
+    SCREEN_Y = 900
+    SCREEN_WIDTH = 1920
+    SCREEN_HEIGHT = 350
+    SCROLL_Y = 900
+    WAIT_BEFORE_SCREEN = 3
+    screenshot_path = "daily_codes_section.png"
 
-            # usuń poprzednie wiadomości bota
-            async for msg in channel.history(limit=50):
-                if msg.author == bot.user:
-                    try:
-                        await msg.delete()
-                    except:
-                        pass
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            page = await browser.new_page(viewport={"width": 1920, "height": 2000})
+            await page.goto("https://deltaforcetools.gg", wait_until="networkidle")
+            await asyncio.sleep(10)
+            await page.evaluate(f"window.scrollTo(0, {SCROLL_Y})")
+            await asyncio.sleep(WAIT_BEFORE_SCREEN)
+
+            await page.screenshot(
+                path=screenshot_path,
+                clip={
+                    "x": SCREEN_X,
+                    "y": SCREEN_Y,
+                    "width": SCREEN_WIDTH,
+                    "height": SCREEN_HEIGHT,
+                },
+            )
+            await browser.close()
+
+            # usuń stare wiadomości
+            await delete_old_bot_messages(channel)
 
             await channel.send("✅ Oto aktualne **Daily Codes** 👇", file=discord.File(screenshot_path))
             os.remove(screenshot_path)
-            print("✅ Daily Codes wysłane pomyślnie.")
 
-        except Exception as e:
-            print("❌ Błąd podczas automatycznego wysyłania:", e)
+            now = datetime.now().strftime("%Y-%m-%d %H:%M")
+            await channel.send(f"🕒 Aktualizacja wykonana automatycznie: {now}")
 
+    except Exception as e:
+        print("❌ Błąd podczas automatycznego wysyłania:", e)
 
-@daily_codes_task.before_loop
-async def before_task():
-    await bot.wait_until_ready()
-    print("🕒 Zadanie automatycznego wysyłania Daily Codes uruchomione...")
-
-
-# ---------------- Keepalive webserver ----------------
+# ---------------- Keepalive webserver (Flask) ----------------
 app = Flask("df_bot_keepalive")
 
 @app.route("/")
 def home():
-    return "✅ DeltaForceDailyCodes bot działa."
+    return "DeltaForceDailyCodes bot is running."
 
 def run_web():
     port = int(os.getenv("PORT", "8080"))
@@ -135,8 +159,7 @@ def run_web():
 def start_web_thread():
     Thread(target=run_web, daemon=True).start()
 
-
-# ---------------- Keepalive pinger ----------------
+# ---------------- Keepalive ping ----------------
 async def keepalive_ping():
     await bot.wait_until_ready()
     async with aiohttp.ClientSession() as session:
@@ -147,15 +170,23 @@ async def keepalive_ping():
                 pass
             await asyncio.sleep(30)
 
-
 # ---------------- Setup hook ----------------
 @bot.event
 async def setup_hook():
     start_web_thread()
-    asyncio.create_task(keepalive_ping())
-    daily_codes_task.start()
-    print("✅ Bot w pełni gotowy — codzienne auto wysyłanie aktywne.")
+    print("✅ Keepalive webserver started.")
 
+    asyncio.create_task(keepalive_ping())
+    print("✅ Keepalive pinger started.")
+
+    async def starter():
+        wait = await seconds_until_next_utc_run(23, 10)
+        print(f"⏳ Pierwsze uruchomienie za {int(wait)}s (-> 23:10 UTC / 00:10 czasu polskiego)")
+        await asyncio.sleep(wait)
+        await daily_job()
+        daily_job.start()
+
+    asyncio.create_task(starter())
 
 # ---------------- Run bot ----------------
 if __name__ == "__main__":
