@@ -139,9 +139,6 @@ async def daily_job():
             await channel.send("✅ Oto aktualne **Daily Codes** 👇", file=discord.File(screenshot_path))
             os.remove(screenshot_path)
 
-            now = datetime.now().strftime("%Y-%m-%d %H:%M")
-            await channel.send(f"🕒 Aktualizacja wykonana automatycznie: {now}")
-
     except Exception as e:
         print("❌ Błąd podczas automatycznego wysyłania:", e)
 
@@ -191,3 +188,4 @@ async def setup_hook():
 # ---------------- Run bot ----------------
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
+
