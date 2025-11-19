@@ -83,7 +83,7 @@ async def cmd_sprawdz(ctx):
         traceback.print_exc()
 
 # ---------------- Harmonogram codzienny ----------------
-async def seconds_until_next_utc_run(hour_utc=23, minute_utc=10):
+async def seconds_until_next_utc_run(hour_utc=23, minute_utc=20):
     """Zwraca liczbę sekund do następnego uruchomienia o określonej godzinie UTC."""
     now = datetime.now(timezone.utc)
     target = now.replace(hour=hour_utc, minute=minute_utc, second=0, microsecond=0)
@@ -93,7 +93,7 @@ async def seconds_until_next_utc_run(hour_utc=23, minute_utc=10):
 
 @tasks.loop(hours=24)
 async def daily_job():
-    """Automatycznie wysyła screena codziennie o 00:10 czasu polskiego."""
+    """Automatycznie wysyła screena codziennie o 00:20 czasu polskiego."""
     if not CHANNEL_ID:
         print("⚠️ CHANNEL_ID not set — daily_job will skip sending.")
         return
@@ -177,8 +177,8 @@ async def setup_hook():
     print("✅ Keepalive pinger started.")
 
     async def starter():
-        wait = await seconds_until_next_utc_run(23, 10)
-        print(f"⏳ Pierwsze uruchomienie za {int(wait)}s (-> 23:10 UTC / 00:10 czasu polskiego)")
+        wait = await seconds_until_next_utc_run(23, 20)
+        print(f"⏳ Pierwsze uruchomienie za {int(wait)}s (-> 23:20 UTC / 00:20 czasu polskiego)")
         await asyncio.sleep(wait)
         await daily_job()
         daily_job.start()
@@ -188,4 +188,5 @@ async def setup_hook():
 # ---------------- Run bot ----------------
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
+
 
